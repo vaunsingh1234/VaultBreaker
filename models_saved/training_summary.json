@@ -1,0 +1,79 @@
+{
+  "baselines": {
+    "image": {
+      "LogisticRegression": {
+        "accuracy": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "SVM_RBF": {
+        "accuracy": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "RandomForest": {
+        "accuracy": 1.0,
+        "f1": 1.0,
+        "roc_auc": 1.0
+      },
+      "GradientBoosting": {
+        "accuracy": 0.5,
+        "f1": 0.0,
+        "roc_auc": 0.5
+      }
+    },
+    "audio": {
+      "LogisticRegression": {
+        "accuracy": 0.5,
+        "f1": 0.5714285714285714,
+        "roc_auc": 0.33333333333333337
+      },
+      "SVM_RBF": {
+        "accuracy": 0.5,
+        "f1": 0.5714285714285714,
+        "roc_auc": 0.4444444444444445
+      },
+      "RandomForest": {
+        "accuracy": 0.5,
+        "f1": 0.4,
+        "roc_auc": 0.7777777777777779
+      },
+      "GradientBoosting": {
+        "accuracy": 0.5,
+        "f1": 0.0,
+        "roc_auc": 0.5
+      }
+    },
+    "video": {
+      "LogisticRegression": {
+        "accuracy": 0.5,
+        "f1": 0.0,
+        "roc_auc": 1.0
+      },
+      "SVM_RBF": {
+        "accuracy": 0.5,
+        "f1": 0.0,
+        "roc_auc": 0.0
+      },
+      "RandomForest": {
+        "accuracy": 0.0,
+        "f1": 0.0,
+        "roc_auc": 0.0
+      },
+      "GradientBoosting": {
+        "accuracy": 0.5,
+        "f1": 0.0,
+        "roc_auc": 0.5
+      }
+    }
+  },
+  "unified_model": {
+    "metrics": {
+      "accuracy": 0.5,
+      "f1": 0.25,
+      "roc_auc": 0.5555555555555556
+    },
+    "calibrated_threshold": 0.5035796165466309,
+    "temperature": 1.6663240985363283
+  }
+}

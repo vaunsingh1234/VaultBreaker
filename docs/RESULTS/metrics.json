@@ -1,0 +1,143 @@
+{
+  "overall": {
+    "accuracy": 0.6428571428571429,
+    "precision": 1.0,
+    "recall": 0.2857142857142857,
+    "f1": 0.4444444444444444,
+    "roc_auc": 0.5408163265306123,
+    "p_e": 0.35714285714285715,
+    "p_e_threshold": 0.5264299087654251,
+    "confusion_matrix": [
+      [
+        7,
+        0
+      ],
+      [
+        5,
+        2
+      ]
+    ],
+    "sample_count": 14
+  },
+  "per_format": {
+    "image": {
+      "accuracy": 0.8333333333333334,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8,
+      "roc_auc": 0.7777777777777778,
+      "p_e": 0.16666666666666669,
+      "p_e_threshold": 0.5264299087654251,
+      "confusion_matrix": [
+        [
+          3,
+          0
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "sample_count": 6
+    },
+    "audio": {
+      "accuracy": 0.5,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.4444444444444444,
+      "p_e": 0.33333333333333337,
+      "p_e_threshold": 0.48213767385485656,
+      "confusion_matrix": [
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "sample_count": 6
+    },
+    "video": {
+      "accuracy": 0.5,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "p_e": 0.5,
+      "p_e_threshold": Infinity,
+      "confusion_matrix": [
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ],
+      "sample_count": 2
+    }
+  },
+  "per_method": {
+    "clean": {
+      "accuracy": 1.0,
+      "mean_cal_prob": 0.4850065989011187,
+      "sample_count": 7
+    },
+    "dct_ac": {
+      "accuracy": 1.0,
+      "mean_cal_prob": 0.5371612376731981,
+      "sample_count": 1
+    },
+    "edge_adaptive": {
+      "accuracy": 0.5,
+      "mean_cal_prob": 0.5084991524652699,
+      "sample_count": 2
+    },
+    "lsb_replacement": {
+      "accuracy": 0.0,
+      "mean_cal_prob": 0.48213767385485656,
+      "sample_count": 1
+    },
+    "echo_hiding": {
+      "accuracy": 0.0,
+      "mean_cal_prob": 0.4735781955185828,
+      "sample_count": 2
+    },
+    "audio_lsb": {
+      "accuracy": 0.0,
+      "mean_cal_prob": 0.48305986142470503,
+      "sample_count": 1
+    }
+  },
+  "accuracy_vs_payload": {
+    "0.05000000074505806": {
+      "accuracy": 0.0,
+      "sample_count": 3
+    },
+    "0.20000000298023224": {
+      "accuracy": 0.5,
+      "sample_count": 2
+    },
+    "0.30000001192092896": {
+      "accuracy": 0.0,
+      "sample_count": 1
+    },
+    "0.4000000059604645": {
+      "accuracy": 1.0,
+      "sample_count": 1
+    }
+  },
+  "cross_method_generalization": {
+    "edge_adaptive": 1.0,
+    "dct_ac": 1.0
+  },
+  "shortcut_sanity_check_auc": {
+    "image": 1.0,
+    "audio": 0.5,
+    "video": 0.5
+  }
+}

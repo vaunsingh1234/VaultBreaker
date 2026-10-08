@@ -1,0 +1,75 @@
+seed: 42
+
+paths:
+  data_dir: "data"
+  raw_dir: "data/raw"
+  generated_dir: "data/generated"
+  splits_dir: "data/splits"
+  features_dir: "data/features"
+  models_dir: "models_saved"
+  results_dir: "docs/RESULTS"
+
+dataset:
+  fast_mode: false
+  image:
+    target_size: [256, 256]
+    num_samples: 1000
+    fast_num_samples: 40
+    payload_rates: [0.05, 0.1, 0.2, 0.4]
+    methods:
+      - "lsb_replacement"
+      - "lsb_matching"
+      - "edge_adaptive"
+      - "dct_ac"
+  audio:
+    sample_rate: 16000
+    duration: 3.0
+    num_samples: 600
+    fast_num_samples: 30
+    payload_rates: [0.05, 0.1, 0.3, 0.5]
+    methods:
+      - "lsb_replacement"
+      - "lsb_matching"
+      - "echo_hiding"
+  video:
+    target_size: [128, 128]
+    fps: 15
+    duration: 2.0
+    num_samples: 200
+    fast_num_samples: 16
+    sample_frames: 8
+    lossless_codec: "ffv1"
+    container: "mkv"
+    payload_rates: [0.05, 0.1, 0.2]
+    methods:
+      - "frame_lsb"
+      - "audio_lsb"
+  split:
+    train_ratio: 0.70
+    val_ratio: 0.15
+    test_ratio: 0.15
+
+features:
+  cache_dir: "data/features"
+  num_workers: 4
+  image_dim: 72
+  audio_dim: 56
+  video_dim: 64
+
+models:
+  latent_dim: 128
+  hidden_dim: 256
+  dropout: 0.2
+  use_aux_head: true
+  aux_loss_weight: 0.3
+  target_fpr: 0.05
+  temperature_scaling: true
+
+training:
+  epochs: 30
+  fast_epochs: 5
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 6
+  scheduler: "cosine"
