@@ -114,3 +114,34 @@ def test_video_audio_track_roundtrip():
     extracted = extract_video_audio_track(stego_audio, meta)
     
     np.testing.assert_array_equal(payload, extracted)
+
+def test_audio_lsb_changed_sample_fraction():
+    """Verify that LSB replacement and matching alter the expected fraction of samples (~rate * 0.5)."""
+    rng = np.random.RandomState(42)
+    rate = 0.60
+    samples = rng.randint(-15000, 15000, size=16000, dtype=np.int16)
+    n_bits = int(len(samples) * rate)
+    payload = rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+
+    # 1. LSB Replacement
+    stego_rep, _ = embed_audio_lsb_replacement(samples, payload, seed=123)
+    flip_rate_rep = np.mean(samples != stego_rep)
+    expected_flip = rate * 0.5
+    # Should be within 3% of expected flip rate
+    assert abs(flip_rate_rep - expected_flip) < 0.03, f"Expected flip rate ~{expected_flip}, got {flip_rate_rep}"
+
+    # 2. LSB Matching
+    stego_mat, _ = embed_audio_lsb_matching(samples, payload, seed=123)
+    flip_rate_mat = np.mean(samples != stego_mat)
+    assert abs(flip_rate_mat - expected_flip) < 0.03, f"Expected flip rate ~{expected_flip}, got {flip_rate_mat}"
+
+def test_video_frame_lsb_matching_roundtrip():
+    from vaultbreaker.embedders.video_lsb import embed_video_frame_lsb_matching, extract_video_frame_lsb_matching
+    rng = np.random.RandomState(42)
+    frames = [rng.randint(0, 256, size=(32, 32), dtype=np.uint8) for _ in range(6)]
+    payload = rng.randint(0, 2, size=150, dtype=np.uint8)
+
+    stego_frames, meta = embed_video_frame_lsb_matching(frames, payload, seed=123)
+    extracted = extract_video_frame_lsb_matching(stego_frames, meta)
+
+    np.testing.assert_array_equal(payload, extracted)

@@ -23,6 +23,8 @@ from vaultbreaker.embedders.audio_echo import (
 from vaultbreaker.embedders.video_lsb import (
     embed_video_frame_lsb,
     extract_video_frame_lsb,
+    embed_video_frame_lsb_matching,
+    extract_video_frame_lsb_matching,
     embed_video_audio_track,
     extract_video_audio_track
 )
@@ -44,6 +46,8 @@ __all__ = [
     "extract_audio_echo",
     "embed_video_frame_lsb",
     "extract_video_frame_lsb",
+    "embed_video_frame_lsb_matching",
+    "extract_video_frame_lsb_matching",
     "embed_video_audio_track",
     "extract_video_audio_track"
 ]

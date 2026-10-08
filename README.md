@@ -1,6 +1,6 @@
 # 🛡️ VaultBreaker: Unified Multi-Modal Steganography Detection
 
-[![Tests](https://img.shields.io/badge/pytest-24%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-27%20passed-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](requirements.txt)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](Makefile)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.14-ee4c2c.svg)](https://pytorch.org/)
@@ -100,7 +100,8 @@ vaultbreaker/
 ├── app/streamlit_app.py        # Dark cybersecurity forensic web console
 ├── api/main.py                 # FastAPI service with /scan and /health endpoints
 ├── scripts/                    # CLI scripts (make_dataset, extract_features, train, evaluate, predict)
-├── tests/                      # Pytest suite (24 unit and integration tests)
+├── demo_samples/               # Source-disjoint test set for viva demo (10 clean + 10 stego per format)
+├── tests/                      # Pytest suite (27 unit and integration tests)
 ├── docs/
 │   ├── ARCHITECTURE.md         # In-depth architectural & mathematical design
 │   ├── REPORT.md               # Full academic-format evaluation report
@@ -120,38 +121,39 @@ pip install -r requirements.txt
 pip install -e . --no-deps
 ```
 
-### 2. Dataset Generation
+### 2. Dataset Generation (~2 minutes)
 ```bash
-# Full dataset:
+# Full dataset (Real covers from Imagenette, ESC-50, and visual motion video):
 python scripts/make_dataset.py
 
 # Or fast demo dataset:
 python scripts/make_dataset.py --fast
 ```
 
-### 3. Feature Extraction
+### 3. Feature Extraction (~2 minutes)
 ```bash
 python scripts/extract_features.py --num-workers 4
 ```
 
-### 4. Model Training & Calibration
+### 4. Model Training & Calibration (~30 seconds)
 ```bash
-python scripts/train.py --fast
+python scripts/train.py
 ```
 
-### 5. Comprehensive Evaluation & Reporting
+### 5. Comprehensive Evaluation & Reporting (~20 seconds)
 ```bash
 python scripts/evaluate.py
+python scripts/generate_report.py
 ```
-Outputs ROC curves, confusion matrices, accuracy vs payload curves, and `metrics.json` directly into `docs/RESULTS/`.
+Outputs ROC curves, confusion matrices, accuracy vs payload curves, and `metrics.json` directly into `docs/RESULTS/`, and regenerates `docs/REPORT.md`.
 
 ### 6. Single & Batch Inference CLI
 ```bash
-# Single file scan:
-python scripts/predict.py data/generated/images/img_src_0000_clean.png
+# Single file scan from viva demo samples:
+python scripts/predict.py demo_samples/image/img_src_0001_clean_01.png
 
 # Batch folder scan with JSON output:
-python scripts/predict.py data/generated/images/ --json scan_results.json
+python scripts/predict.py demo_samples/image/ --json scan_results.json
 ```
 
 ---

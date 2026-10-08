@@ -51,9 +51,12 @@ ENV/
 env.bak/
 venv.bak/
 
-# Feature extraction disk caches
-data/features/cache/
+# Feature extraction disk caches & generated data
+data/features/
 data/cache/
+data/generated/
+data/raw/
+models_saved/test_xgb.joblib
 
 # IDE & OS
 .vscode/

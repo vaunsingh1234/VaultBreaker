@@ -13,9 +13,9 @@ dataset:
   fast_mode: false
   image:
     target_size: [256, 256]
-    num_samples: 1000
+    num_samples: 2000
     fast_num_samples: 40
-    payload_rates: [0.05, 0.1, 0.2, 0.4]
+    payload_rates: [0.10, 0.20, 0.30, 0.50]
     methods:
       - "lsb_replacement"
       - "lsb_matching"
@@ -24,9 +24,9 @@ dataset:
   audio:
     sample_rate: 16000
     duration: 3.0
-    num_samples: 600
+    num_samples: 1000
     fast_num_samples: 30
-    payload_rates: [0.05, 0.1, 0.3, 0.5]
+    payload_rates: [0.20, 0.40, 0.70, 1.00]
     methods:
       - "lsb_replacement"
       - "lsb_matching"
@@ -35,22 +35,22 @@ dataset:
     target_size: [128, 128]
     fps: 15
     duration: 2.0
-    num_samples: 200
+    num_samples: 700
     fast_num_samples: 16
     sample_frames: 8
     lossless_codec: "ffv1"
     container: "mkv"
-    payload_rates: [0.05, 0.1, 0.2]
+    payload_rates: [0.10, 0.20, 0.40]
     methods:
       - "frame_lsb"
-      - "audio_lsb"
+      - "frame_lsb_matching"
   split:
     train_ratio: 0.70
     val_ratio: 0.15
     test_ratio: 0.15
 
 features:
-  cache_dir: "data/features"
+  cache_dir: "data/features/cache"
   num_workers: 4
   image_dim: 72
   audio_dim: 56
@@ -66,7 +66,7 @@ models:
   temperature_scaling: true
 
 training:
-  epochs: 30
+  epochs: 25
   fast_epochs: 5
   batch_size: 32
   learning_rate: 0.001

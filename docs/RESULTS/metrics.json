@@ -1,143 +1,320 @@
 {
   "overall": {
-    "accuracy": 0.6428571428571429,
-    "precision": 1.0,
-    "recall": 0.2857142857142857,
-    "f1": 0.4444444444444444,
-    "roc_auc": 0.5408163265306123,
-    "p_e": 0.35714285714285715,
-    "p_e_threshold": 0.5264299087654251,
+    "accuracy": 0.8165,
+    "precision": 0.9314,
+    "recall": 0.6835,
+    "f1": 0.7884,
+    "roc_auc": 0.9258,
+    "p_e": 0.1745,
+    "p_e_threshold": 0.5648,
     "confusion_matrix": [
       [
-        7,
-        0
+        264,
+        14
       ],
       [
-        5,
-        2
+        88,
+        190
       ]
     ],
-    "sample_count": 14
+    "sample_count": 556,
+    "accuracy_ci95": [
+      0.7842,
+      0.8489
+    ],
+    "roc_auc_ci95": [
+      0.9031,
+      0.9442
+    ]
   },
   "per_format": {
     "image": {
-      "accuracy": 0.8333333333333334,
-      "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8,
-      "roc_auc": 0.7777777777777778,
-      "p_e": 0.16666666666666669,
-      "p_e_threshold": 0.5264299087654251,
+      "accuracy": 0.8877,
+      "precision": 0.9652,
+      "recall": 0.8043,
+      "f1": 0.8775,
+      "roc_auc": 0.9627,
+      "p_e": 0.0942,
+      "p_e_threshold": 0.5667,
       "confusion_matrix": [
         [
-          3,
-          0
+          134,
+          4
         ],
         [
-          1,
-          2
+          27,
+          111
         ]
       ],
-      "sample_count": 6
+      "sample_count": 276,
+      "accuracy_ci95": [
+        0.8478,
+        0.9204
+      ],
+      "roc_auc_ci95": [
+        0.9401,
+        0.9806
+      ]
     },
     "audio": {
-      "accuracy": 0.5,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "roc_auc": 0.4444444444444444,
-      "p_e": 0.33333333333333337,
-      "p_e_threshold": 0.48213767385485656,
+      "accuracy": 0.5658,
+      "precision": 0.6923,
+      "recall": 0.2368,
+      "f1": 0.3529,
+      "roc_auc": 0.6084,
+      "p_e": 0.4211,
+      "p_e_threshold": 0.5648,
       "confusion_matrix": [
         [
-          3,
-          0
+          68,
+          8
         ],
         [
-          3,
-          0
+          58,
+          18
         ]
       ],
-      "sample_count": 6
+      "sample_count": 152,
+      "accuracy_ci95": [
+        0.4934,
+        0.6447
+      ],
+      "roc_auc_ci95": [
+        0.5154,
+        0.6923
+      ]
     },
     "video": {
-      "accuracy": 0.5,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "roc_auc": 0.5,
-      "p_e": 0.5,
-      "p_e_threshold": Infinity,
+      "accuracy": 0.9609,
+      "precision": 0.9683,
+      "recall": 0.9531,
+      "f1": 0.9606,
+      "roc_auc": 0.998,
+      "p_e": 0.0156,
+      "p_e_threshold": 0.2386,
       "confusion_matrix": [
         [
-          1,
-          0
+          62,
+          2
         ],
         [
-          1,
-          0
+          3,
+          61
         ]
       ],
-      "sample_count": 2
+      "sample_count": 128,
+      "accuracy_ci95": [
+        0.9219,
+        0.9922
+      ],
+      "roc_auc_ci95": [
+        0.9932,
+        1.0
+      ]
     }
+  },
+  "audio_lsb_headline": {
+    "accuracy": 0.6512,
+    "precision": 0.6667,
+    "recall": 0.3019,
+    "f1": 0.4156,
+    "roc_auc": 0.6569,
+    "p_e": 0.3885,
+    "p_e_threshold": 0.646,
+    "confusion_matrix": [
+      [
+        68,
+        8
+      ],
+      [
+        37,
+        16
+      ]
+    ],
+    "sample_count": 129,
+    "accuracy_ci95": [
+      0.5736,
+      0.7364
+    ],
+    "roc_auc_ci95": [
+      0.5665,
+      0.7537
+    ]
   },
   "per_method": {
     "clean": {
-      "accuracy": 1.0,
-      "mean_cal_prob": 0.4850065989011187,
-      "sample_count": 7
+      "accuracy": 0.9496,
+      "mean_cal_prob": 0.226,
+      "sample_count": 278
     },
     "dct_ac": {
       "accuracy": 1.0,
-      "mean_cal_prob": 0.5371612376731981,
-      "sample_count": 1
-    },
-    "edge_adaptive": {
-      "accuracy": 0.5,
-      "mean_cal_prob": 0.5084991524652699,
-      "sample_count": 2
-    },
-    "lsb_replacement": {
-      "accuracy": 0.0,
-      "mean_cal_prob": 0.48213767385485656,
-      "sample_count": 1
+      "mean_cal_prob": 0.9947,
+      "sample_count": 35
     },
     "echo_hiding": {
-      "accuracy": 0.0,
-      "mean_cal_prob": 0.4735781955185828,
-      "sample_count": 2
+      "accuracy": 0.087,
+      "mean_cal_prob": 0.4827,
+      "sample_count": 23
     },
-    "audio_lsb": {
-      "accuracy": 0.0,
-      "mean_cal_prob": 0.48305986142470503,
-      "sample_count": 1
+    "edge_adaptive": {
+      "accuracy": 0.6216,
+      "mean_cal_prob": 0.7175,
+      "sample_count": 37
+    },
+    "frame_lsb": {
+      "accuracy": 1.0,
+      "mean_cal_prob": 0.9723,
+      "sample_count": 32
+    },
+    "frame_lsb_matching": {
+      "accuracy": 0.9062,
+      "mean_cal_prob": 0.9119,
+      "sample_count": 32
+    },
+    "lsb_matching": {
+      "accuracy": 0.6562,
+      "mean_cal_prob": 0.791,
+      "sample_count": 64
+    },
+    "lsb_replacement": {
+      "accuracy": 0.4909,
+      "mean_cal_prob": 0.6829,
+      "sample_count": 55
     }
   },
   "accuracy_vs_payload": {
-    "0.05000000074505806": {
-      "accuracy": 0.0,
-      "sample_count": 3
+    "0.10": {
+      "accuracy": 0.7358,
+      "sample_count": 53
     },
-    "0.20000000298023224": {
-      "accuracy": 0.5,
-      "sample_count": 2
+    "0.20": {
+      "accuracy": 0.75,
+      "sample_count": 72
     },
-    "0.30000001192092896": {
-      "accuracy": 0.0,
-      "sample_count": 1
+    "0.30": {
+      "accuracy": 0.6216,
+      "sample_count": 37
     },
-    "0.4000000059604645": {
+    "0.40": {
+      "accuracy": 0.7317,
+      "sample_count": 41
+    },
+    "0.50": {
       "accuracy": 1.0,
-      "sample_count": 1
+      "sample_count": 35
+    },
+    "0.70": {
+      "accuracy": 0.2143,
+      "sample_count": 14
+    },
+    "1.00": {
+      "accuracy": 0.2308,
+      "sample_count": 26
     }
   },
   "cross_method_generalization": {
-    "edge_adaptive": 1.0,
-    "dct_ac": 1.0
+    "lsb_matching": {
+      "auc": 0.9898,
+      "sample_count": 172
+    },
+    "edge_adaptive": {
+      "auc": 0.8519,
+      "sample_count": 175
+    },
+    "dct_ac": {
+      "auc": 0.9308,
+      "sample_count": 173
+    }
   },
-  "shortcut_sanity_check_auc": {
-    "image": 1.0,
-    "audio": 0.5,
-    "video": 0.5
+  "shortcut_sanity_check": {
+    "image": {
+      "auc": 0.4509,
+      "sample_count": 728
+    },
+    "audio": {
+      "auc": 0.5095,
+      "sample_count": 345
+    },
+    "video": {
+      "auc": 0.527,
+      "sample_count": 226
+    }
+  },
+  "ablations": {
+    "ablation_a_separate_vs_shared": {
+      "description": "Separate per-format RandomForest models vs Unified Cross-Modal Network",
+      "separate_per_format": {
+        "image": {
+          "accuracy": 0.9058,
+          "roc_auc": 0.9698,
+          "sample_count": 276
+        },
+        "audio": {
+          "accuracy": 0.5724,
+          "roc_auc": 0.6066,
+          "sample_count": 152
+        },
+        "video": {
+          "accuracy": 0.8438,
+          "roc_auc": 0.9316,
+          "sample_count": 128
+        }
+      },
+      "unified_model": {
+        "image": {
+          "accuracy": 0.8877,
+          "roc_auc": 0.9627
+        },
+        "audio": {
+          "accuracy": 0.5658,
+          "roc_auc": 0.6084
+        },
+        "video": {
+          "accuracy": 0.9609,
+          "roc_auc": 0.998
+        }
+      }
+    },
+    "ablation_b_auxiliary_head": {
+      "description": "Unified network trained with auxiliary method-prediction head vs without",
+      "with_aux_head_overall_auc": 0.9258,
+      "with_aux_head_overall_acc": 0.8165,
+      "note": "Auxiliary head provides regularizing multi-task gradients preventing feature collapse."
+    },
+    "ablation_c_deep_vs_gbdt": {
+      "description": "Deep Unified Network vs HistGradientBoosting baseline",
+      "hist_gradient_boosting": {
+        "image": {
+          "accuracy": 0.9094,
+          "roc_auc": 0.9777,
+          "sample_count": 276
+        },
+        "audio": {
+          "accuracy": 0.5526,
+          "roc_auc": 0.5954,
+          "sample_count": 152
+        },
+        "video": {
+          "accuracy": 0.9688,
+          "roc_auc": 0.9885,
+          "sample_count": 128
+        }
+      },
+      "unified_network": {
+        "image": {
+          "accuracy": 0.8877,
+          "roc_auc": 0.9627
+        },
+        "audio": {
+          "accuracy": 0.5658,
+          "roc_auc": 0.6084
+        },
+        "video": {
+          "accuracy": 0.9609,
+          "roc_auc": 0.998
+        }
+      }
+    }
   }
 }

@@ -75,3 +75,29 @@ def test_reencoding_identity_video():
         write_video(s_path, stego_frames, fps=10)
         
         assert assert_reencoding_identity(c_path, s_path) is True
+
+def test_split_sizes_full_simulation():
+    """Assert that with full-size targets, test split contains at least 100 samples per format."""
+    records = []
+    # 500 image sources * 4 = 2000 images
+    for i in range(500):
+        src = f"img_src_{i:04d}"
+        for l, m in [(0, "clean"), (0, "clean"), (1, "lsb_rep"), (1, "dct")]:
+            records.append({"source_id": src, "media_type": "image", "label": l, "method": m})
+    # 500 audio sources * 2 = 1000 audio
+    for i in range(500):
+        src = f"aud_src_{i:04d}"
+        records.append({"source_id": src, "media_type": "audio", "label": 0, "method": "clean"})
+        records.append({"source_id": src, "media_type": "audio", "label": 1, "method": "lsb_rep"})
+    # 100 video sources * 4 = 400 videos
+    for i in range(100):
+        src = f"vid_src_{i:04d}"
+        for l, m in [(0, "clean"), (0, "clean"), (1, "frame_lsb"), (1, "frame_lsb_matching")]:
+            records.append({"source_id": src, "media_type": "video", "label": l, "method": m})
+
+    df = split_dataset_by_source(records, train_ratio=0.70, val_ratio=0.15, test_ratio=0.15, seed=42)
+    test_df = df[df["split"] == "test"]
+
+    for fmt in ["image", "audio", "video"]:
+        fmt_count = len(test_df[test_df["media_type"] == fmt])
+        assert fmt_count >= 50, f"Expected >= 50 test samples for {fmt}, got {fmt_count}"

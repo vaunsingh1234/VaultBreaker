@@ -9,8 +9,9 @@ from typing import Union
 class AudioFeatureExtractor:
     """
     Extracts a fixed 56-dimensional feature vector for steganography detection
-    from an audio signal (LSB statistics, Chi-square, sample histogram, spectral
-    descriptors, LPC residuals, autocorrelation, and MFCCs).
+    from an audio signal (LSB bit-plane statistics, Pairs-of-Values Chi-Square,
+    first and second-order difference residuals, noise floor characteristics,
+    spectral dynamics, LPC prediction residuals, and MFCC descriptors).
     """
     FEATURE_DIM = 56
 
@@ -35,13 +36,13 @@ class AudioFeatureExtractor:
         if n_samples == 0:
             return np.zeros(self.FEATURE_DIM, dtype=np.float32)
 
-        # 1. LSB Statistics & Chi-Square (8 dims)
+        # 1. LSB Statistics & Proper Raw Pairs-of-Values (PoVs) Chi-Square (10 dims)
         u_samples = samples.view(np.uint16)
         lsb = (u_samples & 1).astype(np.float32)
         lsb_mean = float(np.mean(lsb))
         lsb_var = float(np.var(lsb))
         
-        # Transition frequency
+        # Transition frequency between adjacent samples
         lsb_diff = np.abs(np.diff(lsb))
         lsb_trans = float(np.mean(lsb_diff)) if len(lsb_diff) > 0 else 0.5
         
@@ -59,126 +60,147 @@ class AudioFeatureExtractor:
         else:
             run_mean = float(n_samples)
             run_var = 0.0
-            
-        # Audio Chi-Square statistic on Pairs of Values
-        # Downsample amplitude to 256 bins for stable counts
-        coarse_amp = np.clip((samples.astype(np.int32) + 32768) // 256, 0, 255)
-        hist, _ = np.histogram(coarse_amp, bins=256, range=(0, 256))
-        chi_stat = 0.0
-        dof = 0
-        for k in range(128):
-            obs_even = hist[2 * k]
-            obs_odd = hist[2 * k + 1]
-            exp = (obs_even + obs_odd) / 2.0
-            if exp > 5.0:
-                chi_stat += ((obs_even - exp) ** 2 + (obs_odd - exp) ** 2) / exp
-                dof += 1
-        chi_norm = chi_stat / max(1, dof)
-        chi_log = float(np.log1p(chi_stat))
-        
-        feats.extend([lsb_mean, lsb_var, lsb_trans, lsb_entropy, run_mean, run_var, chi_norm, chi_log])
 
-        # 2. Time-Domain Histogram & Zero-Crossing (8 dims)
-        float_samples = samples.astype(np.float32) / 32768.0
-        amp_mean = float(np.mean(float_samples))
-        amp_std = float(np.std(float_samples))
-        amp_sk = float(skew(float_samples))
-        amp_kt = float(kurtosis(float_samples))
+        # Uncut Pairs-of-Values (PoVs) Westfeld & Pfitzmann Chi-Square on raw 16-bit samples
+        # Each pair k corresponds to values {2k, 2k+1}
+        pairs = u_samples >> 1
+        evens = (u_samples & 1) == 0
+        c_even = np.bincount(pairs[evens], minlength=32768)
+        c_odd = np.bincount(pairs[~evens], minlength=32768)
+        pair_totals = c_even + c_odd
+        sig_mask = pair_totals > 5
         
-        # Zero crossing rate
-        zcr = librosa.feature.zero_crossing_rate(float_samples, frame_length=1024, hop_length=512)[0]
+        if np.sum(sig_mask) > 0:
+            exp_pair = pair_totals[sig_mask] / 2.0
+            chi_val = np.sum((c_even[sig_mask] - exp_pair) ** 2 / exp_pair)
+            dof = int(np.sum(sig_mask))
+            chi_norm = float(chi_val / max(1, dof))
+            chi_log = float(np.log1p(chi_val))
+        else:
+            chi_norm = 0.0
+            chi_log = 0.0
+
+        even_odd_asymmetry = float(abs(np.sum(c_even) - np.sum(c_odd))) / max(1.0, float(n_samples))
+        feats.extend([
+            lsb_mean, lsb_var, lsb_trans, lsb_entropy,
+            run_mean, run_var,
+            chi_norm, chi_log, even_odd_asymmetry,
+            float(np.mean(u_samples % 4 == 0))
+        ]) # 10 dims
+
+        # 2. Difference Residuals & Noise Floor (10 dims)
+        float_samples = samples.astype(np.float64)
+        d1 = np.diff(float_samples)
+        d2 = np.diff(d1)
+        
+        d1_mean = float(np.mean(d1))
+        d1_var = float(np.var(d1))
+        d1_sk = float(skew(d1)) if len(d1) > 2 else 0.0
+        d1_kt = float(kurtosis(d1)) if len(d1) > 2 else 0.0
+
+        d2_var = float(np.var(d2)) if len(d2) > 0 else 0.0
+        d2_kt = float(kurtosis(d2)) if len(d2) > 2 else 0.0
+
+        # High-frequency noise floor (Laplacian-like diff)
+        mad_d1 = float(np.median(np.abs(d1 - np.median(d1))))
+        ratio_d2_d1 = float(d2_var / max(1e-4, d1_var))
+
+        # Difference distribution entropy (binned)
+        hist_d1, _ = np.histogram(np.clip(d1, -100, 100), bins=64)
+        p_d1 = hist_d1 / max(1.0, float(np.sum(hist_d1)))
+        p_d1 = p_d1[p_d1 > 0]
+        ent_d1 = float(-np.sum(p_d1 * np.log2(p_d1)))
+
+        hist_d2, _ = np.histogram(np.clip(d2, -100, 100), bins=64)
+        p_d2 = hist_d2 / max(1.0, float(np.sum(hist_d2)))
+        p_d2 = p_d2[p_d2 > 0]
+        ent_d2 = float(-np.sum(p_d2 * np.log2(p_d2)))
+
+        feats.extend([
+            d1_mean, d1_var, d1_sk, d1_kt,
+            d2_var, d2_kt,
+            mad_d1, ratio_d2_d1, ent_d1, ent_d2
+        ]) # 10 dims
+
+        # 3. Time-Domain & Zero-Crossing (6 dims)
+        norm_samples = (float_samples / 32768.0).astype(np.float32)
+        amp_mean = float(np.mean(norm_samples))
+        amp_std = float(np.std(norm_samples))
+        amp_sk = float(skew(norm_samples))
+        amp_kt = float(kurtosis(norm_samples))
+        
+        zcr = librosa.feature.zero_crossing_rate(norm_samples, frame_length=1024, hop_length=512)[0]
         zcr_mean = float(np.mean(zcr))
         zcr_std = float(np.std(zcr))
-        
-        zero_ratio = float(np.sum(samples == 0)) / max(1, n_samples)
-        dyn_range = float(np.max(float_samples) - np.min(float_samples))
-        
-        feats.extend([amp_mean, amp_std, amp_sk, amp_kt, zcr_mean, zcr_std, zero_ratio, dyn_range])
+        feats.extend([amp_mean, amp_std, amp_sk, amp_kt, zcr_mean, zcr_std]) # 6 dims
 
-        # 3. Spectral & High-Frequency Characteristics (14 dims)
-        # STFT
-        S = np.abs(librosa.stft(float_samples, n_fft=1024, hop_length=512))
+        # 4. Spectral & High-Frequency Characteristics (14 dims)
+        S = np.abs(librosa.stft(norm_samples, n_fft=1024, hop_length=512))
+        spec_cent = librosa.feature.spectral_centroid(S=S, sr=sr)[0]
+        spec_roll = librosa.feature.spectral_rolloff(S=S, sr=sr, roll_percent=0.85)[0]
+        spec_flat = librosa.feature.spectral_flatness(S=S)[0]
+        spec_bw = librosa.feature.spectral_bandwidth(S=S, sr=sr)[0]
         
-        centroid = librosa.feature.spectral_centroid(S=S, sr=sr)[0]
-        flatness = librosa.feature.spectral_flatness(S=S)[0]
-        rolloff = librosa.feature.spectral_rolloff(S=S, sr=sr, roll_percent=0.85)[0]
-        bandwidth = librosa.feature.spectral_bandwidth(S=S, sr=sr)[0]
+        # High-frequency band energy (> 4 kHz)
+        freqs = librosa.fft_frequencies(sr=sr, n_fft=1024)
+        hf_mask = freqs >= 4000
+        hf_energy = float(np.sum(S[hf_mask, :] ** 2))
+        total_energy = float(np.sum(S ** 2)) + 1e-8
+        hf_ratio = hf_energy / total_energy
         
-        # High-frequency energy ratio (top quarter frequency bins)
-        quarter_bin = S.shape[0] // 4
-        high_freq_energy = np.sum(S[3 * quarter_bin :, :] ** 2, axis=0)
-        total_energy = np.sum(S ** 2, axis=0) + 1e-9
-        hf_ratio = high_freq_energy / total_energy
-        
-        # Spectral flux (frame-to-frame difference)
-        flux = np.sqrt(np.mean(np.diff(S, axis=1) ** 2, axis=0)) if S.shape[1] > 1 else np.array([0.0])
-        
-        noise_floor_10 = float(np.percentile(total_energy, 10))
-        noise_median = float(np.median(total_energy))
-        
-        feats.extend([
-            float(np.mean(centroid)), float(np.std(centroid)),
-            float(np.mean(flatness)), float(np.std(flatness)),
-            float(np.mean(rolloff)), float(np.std(rolloff)),
-            float(np.mean(bandwidth)), float(np.std(bandwidth)),
-            float(np.mean(hf_ratio)), float(np.std(hf_ratio)),
-            noise_floor_10, noise_median,
-            float(np.mean(flux)), float(np.std(flux))
-        ])
-
-        # 4. LPC Residual & Autocorrelation (10 dims)
-        # Autocorrelation
-        max_lag = 100
-        auto_corr = librosa.autocorrelate(float_samples, max_size=max_lag)
-        if len(auto_corr) > 3 and auto_corr[0] > 0:
-            norm_ac = auto_corr / auto_corr[0]
-            ac_1 = float(norm_ac[1])
-            ac_2 = float(norm_ac[2])
-            ac_3 = float(norm_ac[3])
-            ac_peak_ratio = float(np.max(norm_ac[10:])) if len(norm_ac) > 10 else 0.0
+        # Spectral flux (spectral change between frames)
+        if S.shape[1] > 1:
+            flux = np.sqrt(np.mean(np.diff(S, axis=1) ** 2, axis=0))
+            flux_mean = float(np.mean(flux))
+            flux_std = float(np.std(flux))
         else:
-            ac_1, ac_2, ac_3, ac_peak_ratio = 0.0, 0.0, 0.0, 0.0
-            
-        # Linear Predictive Coding (order 8)
+            flux_mean, flux_std = 0.0, 0.0
+
+        feats.extend([
+            float(np.mean(spec_cent)), float(np.std(spec_cent)),
+            float(np.mean(spec_roll)), float(np.std(spec_roll)),
+            float(np.mean(spec_flat)), float(np.std(spec_flat)),
+            float(np.mean(spec_bw)), float(np.std(spec_bw)),
+            hf_ratio, float(np.log1p(hf_energy)),
+            flux_mean, flux_std,
+            float(np.median(spec_cent)), float(np.percentile(spec_cent, 90) - np.percentile(spec_cent, 10))
+        ]) # 14 dims
+
+        # 5. Autocorrelation & LPC Residuals (8 dims)
+        # Fast autocorrelation
+        if n_samples > 2048:
+            seg = norm_samples[:2048]
+            ac = np.correlate(seg, seg, mode="full")[len(seg) - 1 :]
+            ac = ac / max(1e-8, ac[0])
+            r1, r2, r3, r4 = float(ac[1]), float(ac[2]), float(ac[3]), float(ac[4])
+        else:
+            r1, r2, r3, r4 = 0.0, 0.0, 0.0, 0.0
+
+        # Linear prediction error (order 8)
         try:
-            a = librosa.lpc(float_samples, order=8)
-            # Inverse filter: e[n] = x[n] - sum(a[k]*x[n-k])
-            residual = lfilter(a, [1.0], float_samples)
-            lpc_var = float(np.var(residual))
-            lpc_kt = float(kurtosis(residual))
-            lpc_sk = float(skew(residual))
-            res_zcr = float(np.mean(librosa.feature.zero_crossing_rate(residual)[0]))
-            lpc_err_mean = float(np.mean(np.abs(residual)))
-            lpc_err_max = float(np.max(np.abs(residual)))
+            a_lpc = librosa.lpc(norm_samples, order=8)
+            est = lfilter([0] + -1 * a_lpc[1:].tolist(), [1], norm_samples)
+            e = norm_samples - est
+            lpc_var = float(np.var(e))
+            lpc_sk = float(skew(e))
+            lpc_kt = float(kurtosis(e))
+            lpc_err_ratio = lpc_var / max(1e-8, amp_std ** 2)
         except Exception:
-            lpc_var, lpc_kt, lpc_sk, res_zcr, lpc_err_mean, lpc_err_max = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            lpc_var, lpc_sk, lpc_kt, lpc_err_ratio = 0.0, 0.0, 0.0, 0.0
 
-        feats.extend([ac_1, ac_2, ac_3, ac_peak_ratio, lpc_var, lpc_kt, lpc_sk, res_zcr, lpc_err_mean, lpc_err_max])
+        feats.extend([r1, r2, r3, r4, lpc_var, lpc_sk, lpc_kt, lpc_err_ratio]) # 8 dims
 
-        # 5. MFCC Features (16 dims)
-        mfcc = librosa.feature.mfcc(y=float_samples, sr=sr, n_mfcc=13)
-        mfcc_mean = np.mean(mfcc, axis=1) # 13 dims
-        feats.extend([float(x) for x in mfcc_mean])
-        
-        mfcc_std_summary = float(np.mean(np.std(mfcc, axis=1)))
+        # 6. MFCC Summary (8 dims)
         try:
-            width = 9 if mfcc.shape[1] >= 9 else (mfcc.shape[1] // 2 * 2 - 1)
-            if width >= 3:
-                delta_mfcc = librosa.feature.delta(mfcc, width=width)
-                delta_summary = float(np.mean(delta_mfcc))
-                delta2_summary = float(np.mean(librosa.feature.delta(mfcc, order=2, width=width)))
-            else:
-                diff = np.diff(mfcc, axis=1) if mfcc.shape[1] > 1 else np.zeros_like(mfcc)
-                delta_summary = float(np.mean(diff))
-                delta2_summary = 0.0
+            mfcc = librosa.feature.mfcc(y=norm_samples, sr=sr, n_mfcc=4, n_fft=1024, hop_length=512)
+            mfcc_means = np.mean(mfcc, axis=1).tolist()
+            mfcc_stds = np.std(mfcc, axis=1).tolist()
         except Exception:
-            delta_summary = 0.0
-            delta2_summary = 0.0
-        
-        feats.extend([mfcc_std_summary, delta_summary, delta2_summary])
+            mfcc_means = [0.0] * 4
+            mfcc_stds = [0.0] * 4
+        feats.extend([float(x) for x in mfcc_means + mfcc_stds]) # 8 dims
 
-        # Final check & sanitize
         vec = np.array(feats, dtype=np.float32)
-        assert len(vec) == self.FEATURE_DIM, f"Extracted {len(vec)} audio features, expected {self.FEATURE_DIM}"
+        assert len(vec) == self.FEATURE_DIM, f"Expected {self.FEATURE_DIM} features, got {len(vec)}"
         vec = np.nan_to_num(vec, nan=0.0, posinf=1e4, neginf=-1e4)
         return vec
