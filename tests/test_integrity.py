@@ -11,7 +11,11 @@ from vaultbreaker.data.generator import (
     write_image, write_audio, write_video
 )
 from vaultbreaker.data.split import split_dataset_by_source
-from vaultbreaker.data.integrity import assert_no_leakage, assert_reencoding_identity
+from vaultbreaker.data.integrity import (
+    assert_no_leakage,
+    assert_reencoding_identity,
+    assert_no_duplicate_sha256_within_label
+)
 from vaultbreaker.embedders.image_lsb import embed_image_lsb_replacement
 from vaultbreaker.embedders.audio_lsb import embed_audio_lsb_replacement
 from vaultbreaker.embedders.video_lsb import embed_video_frame_lsb
@@ -33,6 +37,27 @@ def test_source_disjoint_splitting_no_leakage():
     for src_id in df["source_id"].unique():
         splits_for_src = df[df["source_id"] == src_id]["split"].unique()
         assert len(splits_for_src) == 1, f"Source {src_id} was split across {splits_for_src}!"
+
+def test_no_duplicate_sha256_within_label():
+    # Unique hashes within each label
+    valid_records = [
+        {"filename": "img_01_clean.png", "label": 0, "sha256": "hash_c1"},
+        {"filename": "img_02_clean.png", "label": 0, "sha256": "hash_c2"},
+        {"filename": "img_01_stego.png", "label": 1, "sha256": "hash_s1"},
+        {"filename": "img_02_stego.png", "label": 1, "sha256": "hash_s2"},
+    ]
+    df_valid = pd.DataFrame(valid_records)
+    assert assert_no_duplicate_sha256_within_label(df_valid) is True
+
+    # Duplicate hashes within clean label (Problem C regression test)
+    dup_records = [
+        {"filename": "img_01_clean_01.png", "label": 0, "sha256": "duplicate_hash"},
+        {"filename": "img_01_clean_02.png", "label": 0, "sha256": "duplicate_hash"},
+        {"filename": "img_01_stego_01.png", "label": 1, "sha256": "hash_s1"},
+    ]
+    df_dup = pd.DataFrame(dup_records)
+    with pytest.raises(AssertionError, match="DUPLICATE SHA-256 DETECTED"):
+        assert_no_duplicate_sha256_within_label(df_dup)
 
 def test_reencoding_identity_image():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -77,23 +102,23 @@ def test_reencoding_identity_video():
         assert assert_reencoding_identity(c_path, s_path) is True
 
 def test_split_sizes_full_simulation():
-    """Assert that with full-size targets, test split contains at least 100 samples per format."""
+    """Assert that with 1 clean + 1 stego per source, test split contains at least 50 samples per format."""
     records = []
-    # 500 image sources * 4 = 2000 images
-    for i in range(500):
+    # 1000 image sources * 2 = 2000 images
+    for i in range(1000):
         src = f"img_src_{i:04d}"
-        for l, m in [(0, "clean"), (0, "clean"), (1, "lsb_rep"), (1, "dct")]:
-            records.append({"source_id": src, "media_type": "image", "label": l, "method": m})
+        records.append({"source_id": src, "media_type": "image", "label": 0, "method": "clean"})
+        records.append({"source_id": src, "media_type": "image", "label": 1, "method": "lsb_rep"})
     # 500 audio sources * 2 = 1000 audio
     for i in range(500):
         src = f"aud_src_{i:04d}"
         records.append({"source_id": src, "media_type": "audio", "label": 0, "method": "clean"})
         records.append({"source_id": src, "media_type": "audio", "label": 1, "method": "lsb_rep"})
-    # 100 video sources * 4 = 400 videos
-    for i in range(100):
+    # 200 video sources * 2 = 400 videos
+    for i in range(200):
         src = f"vid_src_{i:04d}"
-        for l, m in [(0, "clean"), (0, "clean"), (1, "frame_lsb"), (1, "frame_lsb_matching")]:
-            records.append({"source_id": src, "media_type": "video", "label": l, "method": m})
+        records.append({"source_id": src, "media_type": "video", "label": 0, "method": "clean"})
+        records.append({"source_id": src, "media_type": "video", "label": 1, "method": "frame_lsb"})
 
     df = split_dataset_by_source(records, train_ratio=0.70, val_ratio=0.15, test_ratio=0.15, seed=42)
     test_df = df[df["split"] == "test"]

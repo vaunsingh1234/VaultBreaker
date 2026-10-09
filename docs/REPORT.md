@@ -2,50 +2,50 @@
 
 **Author:** Senior Forensic ML Engineer  
 **Dataset:** Real Public Cover Datasets (Imagenette2-160, ESC-50, Pan/Zoom Visual Real-Motion Video)  
-**Embeddings:** Laboratory In-House Synthetic Stego Embeddings (LSB Replacement, LSB Matching, Edge-Adaptive, DCT AC, Echo Hiding)  
-**Splits:** 70% Train / 15% Validation / 15% Test (Source-Disjoint Partitioning, 0% Leakage)  
+**Embeddings:** Laboratory In-House Stego Embeddings (LSB Replacement, LSB Matching, Edge-Adaptive, DCT AC, Echo Hiding)  
+**Splits:** 70% Train / 15% Validation / 15% Test (Source-Disjoint Partitioning, 0% Leakage, Deduplicated 50/50 Balance)  
 
 ---
 
 ## 1. Executive Summary & Headline Results
 
-VaultBreaker is a cross-modal digital forensic steganography detector unifying Images, Audio, and Video media through modality-specific feature extractors and a shared 128-dimensional latent space. This evaluation report reflects testing on real cover media with source-disjoint test sets. All metrics include bootstrap 95% confidence intervals (1,000 resamples).
+VaultBreaker is a cross-modal digital forensic steganography detector unifying Images, Audio, and Video media through modality-specific feature extractors and a shared 128-dimensional latent space. This evaluation report reflects testing on real cover media with source-disjoint test sets. All metrics include cluster bootstrap 95% confidence intervals computed by resampling unique source IDs (1,000 resamples).
 
 ### Table 1: Detection Performance on Test Split (by Format)
 
-| Modality | Test Samples | Accuracy (95% CI) | Precision | Recall | F1 Score | ROC-AUC (95% CI) | Detection Error $P_E$ |
+| Modality | Test Samples (Unique Sources) | Accuracy (95% CI) | Precision | Recall | F1 Score | ROC-AUC (95% CI) | Detection Error $P_E$ |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Image** | 276 | **0.8877** `[0.848, 0.920]` | 0.9652 | 0.8043 | 0.8775 | **0.9627** `[0.940, 0.981]` | 0.0942 |
-| **Audio** | 152 | **0.5658** `[0.493, 0.645]` | 0.6923 | 0.2368 | 0.3529 | **0.6084** `[0.515, 0.692]` | 0.4211 |
-| **Video** | 128 | **0.9609** `[0.922, 0.992]` | 0.9683 | 0.9531 | 0.9606 | **0.9980** `[0.993, 1.000]` | 0.0156 |
-| **Unified Overall** | **556** | **0.8165** `[0.784, 0.849]` | **0.9314** | **0.6835** | **0.7884** | **0.9258** `[0.903, 0.944]` | **0.1745** |
+| **Image** | 600 files (300 unique sources) | **0.8800** `[0.855, 0.903]` | 0.9597 | 0.7933 | 0.8686 | **0.9372** `[0.918, 0.955]` | 0.1100 |
+| **Audio** | 286 files (143 unique sources) | **0.5629** `[0.524, 0.601]` | 0.6500 | 0.2727 | 0.3842 | **0.6044** `[0.556, 0.651]` | 0.4056 |
+| **Video** | 120 files (60 unique sources) | **0.9667** `[0.925, 0.992]` | 1.0000 | 0.9333 | 0.9655 | **0.9972** `[0.990, 1.000]` | 0.0250 |
+| **Unified Overall** | **1006 files (503 unique sources)** | **0.8002** `[0.776, 0.824]` | **0.9148** | **0.6620** | **0.7682** | **0.8990** `[0.881, 0.917]` | **0.1839** |
 
-> 🔍 **Audio LSB Headline (Excl. Echo Hiding):** Accuracy: **0.6512** (95% CI: `[0.574, 0.736]`), ROC-AUC: **0.6569** (95% CI: `[0.567, 0.754]`), N=129
+> 🔍 **Audio LSB Headline (Excl. Echo Hiding):** Accuracy: **0.6245** (95% CI: `[0.581, 0.665]`), ROC-AUC: **0.6151** (95% CI: `[0.557, 0.675]`), Count: 237 files (143 unique sources)
 
 ## 2. Embedding Method Performance Breakdown
 
-| Embedding Method | Test Samples | Sensitivity / Accuracy | Mean Calibrated Stego Prob | Assessment |
+| Embedding Method | Test Samples (Unique Sources) | Sensitivity / Accuracy | Mean Calibrated Stego Prob | Assessment |
 | :--- | :---: | :---: | :---: | :--- |
-| `clean` | 278 | 0.9496 | 0.2260 | Strong Detection |
-| `dct_ac` | 35 | 1.0000 | 0.9947 | Strong Detection |
-| `echo_hiding` | 23 | 0.0870 | 0.4827 | Insufficient samples (N < 30) |
-| `edge_adaptive` | 37 | 0.6216 | 0.7175 | Moderate Signal |
-| `frame_lsb` | 32 | 1.0000 | 0.9723 | Strong Detection |
-| `frame_lsb_matching` | 32 | 0.9062 | 0.9119 | Strong Detection |
-| `lsb_matching` | 64 | 0.6562 | 0.7910 | Moderate Signal |
-| `lsb_replacement` | 55 | 0.4909 | 0.6829 | Weak Signal / Resistant |
+| `clean` | 503 files (503 unique sources) | 0.9384 | 0.2672 | Strong Detection |
+| `dct_ac` | 89 files (89 unique sources) | 1.0000 | 0.9862 | Strong Detection |
+| `echo_hiding` | 49 files (49 unique sources) | 0.2653 | 0.5263 | Weak Signal / Resistant |
+| `edge_adaptive` | 79 files (79 unique sources) | 0.4557 | 0.5696 | Weak Signal / Resistant |
+| `frame_lsb` | 23 files (23 unique sources) | 0.9565 | 0.9485 | Insufficient samples (< 30 unique sources) |
+| `frame_lsb_matching` | 37 files (37 unique sources) | 0.9189 | 0.9319 | Strong Detection |
+| `lsb_matching` | 114 files (114 unique sources) | 0.5614 | 0.7071 | Weak Signal / Resistant |
+| `lsb_replacement` | 112 files (112 unique sources) | 0.6696 | 0.7605 | Moderate Signal |
 
 ## 3. Detection Sensitivity vs. Embedding Payload Density
 
-| Payload Rate | Stego Test Samples | Detection Sensitivity | Statistical Confidence |
+| Payload Rate | Stego Test Samples (Unique Sources) | Detection Sensitivity | Statistical Confidence |
 | :--- | :---: | :---: | :--- |
-| **0.10** | 53 | 0.7358 | Statistically verified |
-| **0.20** | 72 | 0.7500 | Statistically verified |
-| **0.30** | 37 | 0.6216 | Statistically verified |
-| **0.40** | 41 | 0.7317 | Statistically verified |
-| **0.50** | 35 | 1.0000 | Statistically verified |
-| **0.70** | 14 | 0.2143 | Insufficient samples (N < 30) |
-| **1.00** | 26 | 0.2308 | Insufficient samples (N < 30) |
+| **0.10** | 101 files (101 unique sources) | 0.5941 | Statistically verified |
+| **0.20** | 127 files (127 unique sources) | 0.6614 | Statistically verified |
+| **0.30** | 73 files (73 unique sources) | 0.8767 | Statistically verified |
+| **0.40** | 60 files (60 unique sources) | 0.5167 | Statistically verified |
+| **0.50** | 80 files (80 unique sources) | 1.0000 | Statistically verified |
+| **0.70** | 31 files (31 unique sources) | 0.1935 | Statistically verified |
+| **1.00** | 31 files (31 unique sources) | 0.2581 | Statistically verified |
 
 ## 4. Generalization & Integrity Control Experiments
 
@@ -53,9 +53,9 @@ VaultBreaker is a cross-modal digital forensic steganography detector unifying I
 
 | Test Method (Unseen) | Test Samples | Zero-Shot ROC-AUC | Verdict |
 | :--- | :---: | :---: | :--- |
-| `lsb_matching` | 172 | 0.9898 | Generalizes robustly |
-| `edge_adaptive` | 175 | 0.8519 | Generalizes robustly |
-| `dct_ac` | 173 | 0.9308 | Generalizes robustly |
+| `lsb_matching` | 363 | 0.9180 | Generalizes robustly |
+| `edge_adaptive` | 379 | 0.7110 | Method-specific signature needed |
+| `dct_ac` | 389 | 0.9046 | Generalizes robustly |
 
 ### 4.2 Shortcut Learning Sanity Check (Random Labels on Clean Covers)
 
@@ -63,30 +63,44 @@ To verify that models learn genuine steganographic artifacts rather than dataset
 
 | Modality | Clean Samples | Random-Label ROC-AUC | Expected Value | Shortcut Detected? |
 | :--- | :---: | :---: | :---: | :--- |
-| **Image** | 728 | 0.4509 | ~0.5000 | **NO (Expected ~0.50)** |
-| **Audio** | 345 | 0.5095 | ~0.5000 | **NO (Expected ~0.50)** |
-| **Video** | 226 | 0.5270 | ~0.5000 | **NO (Expected ~0.50)** |
+| **Image** | 1395 | 0.5275 | ~0.5000 | **NO (Expected ~0.50)** |
+| **Audio** | 706 | 0.4628 | ~0.5000 | **NO (Expected ~0.50)** |
+| **Video** | 244 | 0.4561 | ~0.5000 | **NO (Expected ~0.50)** |
 
 ## 5. Scientific Ablation Studies
 
 ### 5.1 Ablation A: Unified Shared Latent Space vs. Separate Per-Format Models
 
-| Modality | Separate RF (Accuracy / AUC) | Unified Network (Accuracy / AUC) | Finding |
+| Modality | Separate RF (Accuracy / AUC) | Unified Network (Accuracy / AUC) | Honest Assessment |
 | :--- | :---: | :---: | :--- |
-| **Image** | 0.9058 / 0.9698 | 0.8877 / 0.9627 | Shared representation maintains competitive performance while unifying inference |
-| **Audio** | 0.5724 / 0.6066 | 0.5658 / 0.6084 | Shared representation maintains competitive performance while unifying inference |
-| **Video** | 0.8438 / 0.9316 | 0.9609 / 0.9980 | Shared representation maintains competitive performance while unifying inference |
+| **Image** | 0.8717 / 0.9443 | 0.8800 / 0.9372 | Unified model ahead (+0.0083 acc) |
+| **Audio** | 0.5909 / 0.6072 | 0.5629 / 0.6044 | Separate RF ahead (+0.0280 acc) |
+| **Video** | 0.9250 / 0.9779 | 0.9667 / 0.9972 | Unified model ahead (+0.0417 acc) |
 
-### 5.2 Ablation C: Unified Neural Network vs. Histogram Gradient Boosting Baseline
+> **Empirical Finding:** On image, unified model achieves higher or equal accuracy (0.8800 vs 0.8717). On audio, separate RandomForest achieves higher accuracy (0.5909 vs 0.5629). On video, unified model achieves higher or equal accuracy (0.9667 vs 0.9250).
 
-| Modality | HistGradientBoosting (Accuracy / AUC) | Unified Network (Accuracy / AUC) | Finding |
+### 5.2 Ablation B: With vs. Without Auxiliary Method Head
+
+Empirical test of unified model trained with auxiliary method head vs. an identical model trained without it:
+
+| Configuration | Overall Accuracy | Overall ROC-AUC | Image AUC | Audio AUC | Video AUC |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **With Auxiliary Head** | **0.8002** | **0.8990** | 0.9372 | 0.6044 | 0.9972 |
+| **Without Auxiliary Head** | **0.7982** | **0.8974** | 0.9296 | 0.6106 | 0.9994 |
+
+> **Empirical Finding:** The auxiliary head achieves comparable ROC-AUC to the model without it (0.8990 with-aux vs 0.8974 without-aux, diff +0.0016). The data does not show significant regularizing gains from auxiliary method supervision.
+
+### 5.3 Ablation C: Unified Neural Network vs. Histogram Gradient Boosting Baseline
+
+| Modality | HistGradientBoosting (Accuracy / AUC) | Unified Network (Accuracy / AUC) | Comparison |
 | :--- | :---: | :---: | :--- |
-| **Image** | 0.9094 / 0.9777 | 0.8877 / 0.9627 | Handcrafted features provide strong direct tree boundaries, complemented by deep latent projection |
-| **Audio** | 0.5526 / 0.5954 | 0.5658 / 0.6084 | Handcrafted features provide strong direct tree boundaries, complemented by deep latent projection |
-| **Video** | 0.9688 / 0.9885 | 0.9609 / 0.9980 | Handcrafted features provide strong direct tree boundaries, complemented by deep latent projection |
+| **Image** | 0.9050 / 0.9709 | 0.8800 / 0.9372 | GBDT ahead (+0.0250) |
+| **Audio** | 0.5839 / 0.5996 | 0.5629 / 0.6044 | GBDT ahead (+0.0210) |
+| **Video** | 0.9833 / 0.9986 | 0.9667 / 0.9972 | GBDT ahead (+0.0166) |
 
 ## 6. Limitations & Scientific Boundaries
 
-1. **Public vs Laboratory Distribution:** Cover media were sourced from real-world open benchmarks (Imagenette, ESC-50). However, stego files were synthesized in-laboratory via our own pure-Python embedding engines.
-2. **Generalization to Proprietary Tools:** While high detection rates are verified on standard LSB replacement, matching, and spatial adaptive algorithms, closed-source tools (e.g. Steghide, OutGuess) employ custom permutation seeds and matrix embedding that may require tool-specific calibration.
-3. **Echo Hiding Complexity:** In audio, echo hiding modulates cepstral delays and is substantially more resistant to time-domain LSB attacks than bit-plane flipping.
+1. **Public Covers vs In-House Stego Embeddings:** Cover media are sourced from standard public datasets (Imagenette2-160 for images, ESC-50 for audio). However, stego files are produced via our own pure-Python embedding engines under controlled laboratory conditions, which may differ from malware in the wild.
+2. **Video Covers:** Video clips are synthesized via smooth pan/zoom affine transformations across real still photographs (from Imagenette) in lossless FFV1 MKV containers, not natural camera footage. Real-world compressed video (e.g. H.264/HEVC) involves inter-frame motion estimation and quantization noise that require separate motion-vector steganalysis.
+3. **Unified Architecture vs. Per-Format Specialization:** While the unified cross-modal network enables a single deployment footprint and cross-modal inference, empirical ablations demonstrate that specialized tree models (RandomForest and HistGradientBoosting) remain highly competitive on handcrafted feature vectors, achieving equal or higher accuracy on some modalities (e.g., audio and images). The unified model's primary advantage is architectural consolidation rather than a strict accuracy lead across all individual formats.
+4. **Echo Hiding in Audio:** Audio echo hiding alters cepstral delay peaks rather than time-domain LSB planes. While cepstral peak detection provides signal, echo hiding remains more difficult to separate at lower payload rates than direct bit-plane substitution.

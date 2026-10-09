@@ -13,7 +13,7 @@ dataset:
   fast_mode: false
   image:
     target_size: [256, 256]
-    num_samples: 2000
+    num_samples: 4000
     fast_num_samples: 40
     payload_rates: [0.10, 0.20, 0.30, 0.50]
     methods:
@@ -24,7 +24,7 @@ dataset:
   audio:
     sample_rate: 16000
     duration: 3.0
-    num_samples: 1000
+    num_samples: 2000
     fast_num_samples: 30
     payload_rates: [0.20, 0.40, 0.70, 1.00]
     methods:

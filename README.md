@@ -1,6 +1,6 @@
 # 🛡️ VaultBreaker: Unified Multi-Modal Steganography Detection
 
-[![Tests](https://img.shields.io/badge/pytest-27%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-28%20passed-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](requirements.txt)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](Makefile)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.14-ee4c2c.svg)](https://pytorch.org/)
@@ -101,7 +101,7 @@ vaultbreaker/
 ├── api/main.py                 # FastAPI service with /scan and /health endpoints
 ├── scripts/                    # CLI scripts (make_dataset, extract_features, train, evaluate, predict)
 ├── demo_samples/               # Source-disjoint test set for viva demo (10 clean + 10 stego per format)
-├── tests/                      # Pytest suite (27 unit and integration tests)
+├── tests/                      # Pytest suite (28 unit and integration tests)
 ├── docs/
 │   ├── ARCHITECTURE.md         # In-depth architectural & mathematical design
 │   ├── REPORT.md               # Full academic-format evaluation report

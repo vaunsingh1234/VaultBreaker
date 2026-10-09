@@ -63,3 +63,29 @@ def assert_reencoding_identity(cover_path: Union[str, Path], stego_path: Union[s
         assert props_c.shape == props_s.shape, f"Video shape mismatch: {props_c.shape} vs {props_s.shape}"
         assert props_c.dtype == props_s.dtype, f"Video dtype mismatch: {props_c.dtype} vs {props_s.dtype}"
     return True
+
+def assert_no_duplicate_sha256_within_label(manifest: Union[pd.DataFrame, str, Path]) -> bool:
+    """
+    Asserts that no two files within the same label share the same sha256 hash.
+    Ensures that duplicate clean copies or repeated stego files are eliminated.
+    """
+    if isinstance(manifest, (str, Path)):
+        df = pd.read_csv(manifest)
+    else:
+        df = manifest.copy()
+
+    if "sha256" not in df.columns or "label" not in df.columns:
+        return True
+
+    for label in df["label"].unique():
+        sub = df[df["label"] == label]
+        duplicates = sub[sub.duplicated(subset=["sha256"], keep=False)]
+        if not duplicates.empty:
+            num_dups = len(duplicates)
+            dup_hashes = duplicates["sha256"].unique()[:5]
+            dup_files = duplicates["filename"].tolist()[:6]
+            raise AssertionError(
+                f"DUPLICATE SHA-256 DETECTED within label {label}: {num_dups} duplicate file rows found! "
+                f"Duplicate files: {dup_files}, sample hashes: {list(dup_hashes)}"
+            )
+    return True

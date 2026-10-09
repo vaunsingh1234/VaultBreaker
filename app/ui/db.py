@@ -153,38 +153,59 @@ def update_scan_status(scan_id: str, new_status: str):
         conn.execute("UPDATE scans SET status = ? WHERE scan_id = ?", (new_status, scan_id))
         conn.commit()
 
-def seed_demo_data(predictor, force: bool = False):
-    """Seed demo scans from demo_samples/ to populate the CyFocus dashboard."""
+def clear_all_scans():
+    """Clear all records from scan history database."""
     init_db()
     with get_connection() as conn:
-        cursor = conn.execute("SELECT COUNT(*) FROM scans")
-        count = cursor.fetchone()[0]
-        if count > 0 and not force:
-            return
+        conn.execute("DELETE FROM scans")
+        conn.commit()
 
+def scan_demo_sample(predictor, preferred_format: Optional[str] = None) -> Optional[str]:
+    """Scan a real sample from demo_samples/ and record it in the database."""
+    init_db()
     demo_root = Path("demo_samples")
     if not demo_root.exists():
-        return
+        return None
 
-    sample_candidates = [
-        # Image Clean & Stego
-        demo_root / "image" / "img_src_0001_clean_01.png",
-        demo_root / "image" / "img_src_0001_stego_lsb_matching_0.20.png",
-        demo_root / "image" / "img_src_0014_stego_dct_ac_0.50.png",
-        # Audio Clean & Stego
-        demo_root / "audio" / "aud_src_0002_clean.wav",
-        demo_root / "audio" / "aud_src_0010_stego_lsb_matching_0.70.wav",
-        demo_root / "audio" / "aud_src_0024_stego_lsb_replacement_0.20.wav",
-        # Video Clean & Stego
-        demo_root / "video" / "vid_src_0012_clean_01.mkv",
-        demo_root / "video" / "vid_src_0012_stego_frame_lsb_matching_0.20.mkv",
-        demo_root / "video" / "vid_src_0016_stego_frame_lsb_0.20.mkv"
+    # Candidate real files across formats
+    candidates = [
+        demo_root / "image" / "img_src_0001_clean.png",
+        demo_root / "image" / "img_src_0001_stego_lsb_matching_0.10.png",
+        demo_root / "audio" / "aud_src_0006_clean.wav",
+        demo_root / "audio" / "aud_src_0006_stego_lsb_replacement_0.70.wav",
+        demo_root / "video" / "vid_src_0002_clean.mkv",
+        demo_root / "video" / "vid_src_0002_stego_frame_lsb_0.20.mkv",
     ]
 
-    for p in sample_candidates:
-        if p.exists():
-            try:
-                rep = predictor.predict_file(p, generate_explanation=True)
-                add_scan_record(rep, filepath=str(p))
-            except Exception:
-                pass
+    # Check which have already been scanned
+    scanned_filenames = {s["filename"] for s in get_all_scans(limit=500)}
+    
+    target_sample = None
+    # First try unscanned candidates matching preferred format if specified
+    if preferred_format:
+        fmt_candidates = [c for c in candidates if preferred_format.lower() in str(c)]
+        for c in fmt_candidates:
+            if c.exists() and c.name not in scanned_filenames:
+                target_sample = c
+                break
+
+    # Otherwise try any unscanned candidate
+    if target_sample is None:
+        for c in candidates:
+            if c.exists() and c.name not in scanned_filenames:
+                target_sample = c
+                break
+
+    # If all scanned, pick first existing candidate
+    if target_sample is None:
+        for c in candidates:
+            if c.exists():
+                target_sample = c
+                break
+
+    if target_sample is None or not target_sample.exists():
+        return None
+
+    rep = predictor.predict_file(target_sample, generate_explanation=True)
+    return add_scan_record(rep, filepath=str(target_sample))
+

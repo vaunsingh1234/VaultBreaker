@@ -54,11 +54,11 @@ def get_ram_aware_dataset_sizes(
     disk_free_gb = caps["disk_free_gb"]
 
     # Base target values
-    target_img = config_img or 2000
-    target_aud = config_aud or 1000
+    target_img = config_img or 4000
+    target_aud = config_aud or 2000
     target_vid = config_vid or 700
 
-    if ram_gb < 7.5 or disk_free_gb < 2.0:
+    if ram_gb < 7.5 or disk_free_gb < 1.0:
         factor = 0.5
         target_img = max(400, int(target_img * factor))
         target_aud = max(300, int(target_aud * factor))
@@ -267,14 +267,24 @@ def prepare_real_audio(
                     if orig_sr != target_sr:
                         data = librosa.resample(data.astype(np.float32), orig_sr=orig_sr, target_sr=target_sr)
 
-                    # Slice or pad to exact duration
+                    # Slice to exact duration: find window with maximum energy
                     if len(data) >= target_samples:
-                        # Take center 3 seconds
-                        start = (len(data) - target_samples) // 2
-                        data = data[start : start + target_samples]
+                        hop = target_sr // 4
+                        best_start = 0
+                        best_energy = -1.0
+                        for s in range(0, len(data) - target_samples + 1, hop):
+                            energy = float(np.sum(data[s : s + target_samples] ** 2))
+                            if energy > best_energy:
+                                best_energy = energy
+                                best_start = s
+                        data = data[best_start : best_start + target_samples]
                     else:
                         pad_len = target_samples - len(data)
                         data = np.pad(data, (0, pad_len), mode="wrap")
+
+                    # Skip clips that are digital silence even in their maximum-energy window
+                    if np.max(np.abs(data)) < 1e-3:
+                        continue
 
                     # Normalize amplitude and convert to 16-bit PCM
                     max_abs = np.max(np.abs(data)) + 1e-8

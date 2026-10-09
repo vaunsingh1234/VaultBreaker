@@ -18,7 +18,7 @@ from vaultbreaker.data.generator import (
     generate_video_dataset
 )
 from vaultbreaker.data.split import split_dataset_by_source, save_splits
-from vaultbreaker.data.integrity import assert_no_leakage
+from vaultbreaker.data.integrity import assert_no_leakage, assert_no_duplicate_sha256_within_label
 
 logger = get_logger("MakeDataset")
 
@@ -46,9 +46,9 @@ def main():
 
     # Compute RAM/disk-aware dataset sizes
     sizes = get_ram_aware_dataset_sizes(
-        config_img=img_cfg.get("num_samples", 2000),
-        config_aud=aud_cfg.get("num_samples", 1000),
-        config_vid=vid_cfg.get("num_samples", 250),
+        config_img=img_cfg.get("num_samples", 4000),
+        config_aud=aud_cfg.get("num_samples", 2000),
+        config_vid=vid_cfg.get("num_samples", 700),
         fast=args.fast
     )
     n_img, n_aud, n_vid = sizes["images"], sizes["audio"], sizes["video"]
@@ -124,7 +124,8 @@ def main():
 
     # 5. Integrity verification
     assert_no_leakage(df_manifest)
-    logger.info("VERIFICATION PASSED: No source ID leakage detected across splits.")
+    assert_no_duplicate_sha256_within_label(df_manifest)
+    logger.info("VERIFICATION PASSED: No source ID leakage and no duplicate SHA-256 files detected across manifest.")
 
     # 6. Save manifests
     manifest_paths = save_splits(df_manifest, splits_dir)

@@ -88,7 +88,7 @@ class ImageFeatureExtractor:
         
         feats.extend([lsb_mean, lsb_var, h_trans, v_trans, lsb_entropy, run_mean, run_var, lsb_b1_corr])
 
-        # 2. Chi-Square & Sample Pair Analysis (6 dims)
+        # 2. Chi-Square, RS Analysis & Sample Pair Analysis (6 dims)
         hist, _ = np.histogram(gray_uint8, bins=256, range=(0, 256))
         # Pairs of Values (PoVs): 2k and 2k+1
         chi_stat = 0.0
@@ -100,30 +100,54 @@ class ImageFeatureExtractor:
             if expected > 5.0:
                 chi_stat += ((observed_even - expected) ** 2 + (observed_odd - expected) ** 2) / expected
                 dof += 1
-        chi_normalized = chi_stat / max(1, dof)
+        chi_normalized = float(chi_stat / max(1, dof))
         
-        # Sample Pair Analysis (SPA) estimate
-        # Count sample pairs (u, v) where u is even and v == u+1 vs u is odd and v == u-1
-        u = gray_uint8[:, :-1].ravel().astype(np.int32)
-        v = gray_uint8[:, 1:].ravel().astype(np.int32)
-        p_pairs = np.sum((u % 2 == 0) & (v == u + 1))
-        q_pairs = np.sum((u % 2 == 1) & (v == u - 1))
-        spa_diff = float(p_pairs - q_pairs) / max(1, len(u))
+        # Sample Pair Analysis (SPA) estimate (both horizontal and vertical pairs)
+        u_h = gray_uint8[:, :-1].ravel().astype(np.int32)
+        v_h = gray_uint8[:, 1:].ravel().astype(np.int32)
+        u_v = gray_uint8[:-1, :].ravel().astype(np.int32)
+        v_v = gray_uint8[1:, :].ravel().astype(np.int32)
+        u_all = np.concatenate([u_h, u_v])
+        v_all = np.concatenate([v_h, v_v])
+        p_pairs = np.sum((u_all % 2 == 0) & (v_all == u_all + 1))
+        q_pairs = np.sum((u_all % 2 == 1) & (v_all == u_all - 1))
+        spa_diff = float(p_pairs - q_pairs) / max(1.0, float(len(u_all)))
         
-        # RS analysis mask proxy
-        diag_diff = np.abs(gray[:-1, :-1] - gray[1:, 1:])
-        diag_var = float(np.var(diag_diff))
-        
-        # Parity bit autocorrelation at lag 1
-        parity = (gray_uint8 & 1).astype(np.float32)
-        lag1_corr = float(np.mean(parity[:, :-1] * parity[:, 1:]) - (lsb_mean ** 2))
-        
+        # True 2x2 Block RS Steganalysis (Fridrich et al.)
+        H, W = gray_uint8.shape
+        h_crop = (H // 2) * 2
+        w_crop = (W // 2) * 2
+        if h_crop >= 2 and w_crop >= 2:
+            blocks = gray_uint8[:h_crop, :w_crop].reshape(h_crop // 2, 2, w_crop // 2, 2).swapaxes(1, 2).reshape(-1, 2, 2).astype(np.int32)
+            f_orig = np.abs(blocks[:, 0, 0] - blocks[:, 0, 1]) + np.abs(blocks[:, 0, 1] - blocks[:, 1, 1]) + np.abs(blocks[:, 1, 1] - blocks[:, 1, 0]) + np.abs(blocks[:, 1, 0] - blocks[:, 0, 0])
+            
+            # Mask M = [[0, 1], [1, 0]]
+            b_pos = blocks.copy()
+            b_pos[:, 0, 1] ^= 1
+            b_pos[:, 1, 0] ^= 1
+            f_pos = np.abs(b_pos[:, 0, 0] - b_pos[:, 0, 1]) + np.abs(b_pos[:, 0, 1] - b_pos[:, 1, 1]) + np.abs(b_pos[:, 1, 1] - b_pos[:, 1, 0]) + np.abs(b_pos[:, 1, 0] - b_pos[:, 0, 0])
+            
+            b_neg = blocks.copy()
+            b_neg[:, 0, 1] = np.where(blocks[:, 0, 1] % 2 == 0, blocks[:, 0, 1] - 1, blocks[:, 0, 1] + 1)
+            b_neg[:, 1, 0] = np.where(blocks[:, 1, 0] % 2 == 0, blocks[:, 1, 0] - 1, blocks[:, 1, 0] + 1)
+            f_neg = np.abs(b_neg[:, 0, 0] - b_neg[:, 0, 1]) + np.abs(b_neg[:, 0, 1] - b_neg[:, 1, 1]) + np.abs(b_neg[:, 1, 1] - b_neg[:, 1, 0]) + np.abs(b_neg[:, 1, 0] - b_neg[:, 0, 0])
+            
+            r_pos = float(np.mean(f_pos > f_orig))
+            s_pos = float(np.mean(f_pos < f_orig))
+            r_neg = float(np.mean(f_neg > f_orig))
+            s_neg = float(np.mean(f_neg < f_orig))
+            
+            rs_asym = float(abs(r_pos - r_neg) + abs(s_pos - s_neg))
+            rs_gap = float(r_pos - s_pos)
+        else:
+            rs_asym, rs_gap = 0.0, 0.0
+            
         # Even/Odd histogram bin parity disparity
         even_sum = np.sum(hist[0::2])
         odd_sum = np.sum(hist[1::2])
-        parity_imbalance = float(abs(even_sum - odd_sum)) / max(1, len(flat_lsb))
+        parity_imbalance = float(abs(even_sum - odd_sum)) / max(1.0, float(len(flat_lsb)))
         
-        feats.extend([chi_normalized, np.log1p(chi_stat), spa_diff, diag_var, lag1_corr, parity_imbalance])
+        feats.extend([chi_normalized, float(np.log1p(chi_stat)), spa_diff, rs_asym, rs_gap, parity_imbalance])
 
         # 3. Pixel-value histogram moments (8 dims)
         mean_pix = float(np.mean(gray))

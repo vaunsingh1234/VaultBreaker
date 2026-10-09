@@ -21,12 +21,12 @@ TEXT_PRIMARY = "#EDEDED"
 def status_marker(status_or_verdict: str) -> str:
     """Return colored square dot marker HTML."""
     s = str(status_or_verdict).lower()
-    if "clean" in s or "resolved" in s or "benign" in s:
-        color = STATUS_CLEAN
-    elif "suspect" in s or "triage" in s or "medium" in s:
-        color = STATUS_SUSPICIOUS
-    elif "stego" in s or "high" in s or "critical" in s or "confirmed" in s:
+    if "critical" in s or "high" in s or "stego" in s or "confirmed" in s:
         color = STATUS_HIGH
+    elif "suspect" in s or "medium" in s or "triage" in s or "analyzing" in s:
+        color = STATUS_SUSPICIOUS
+    elif "clean" in s or "low" in s or "resolved" in s or "benign" in s:
+        color = STATUS_CLEAN
     else:
         color = STATUS_GREY
     return f'<span class="severity-marker" style="background-color: {color};"></span>'
@@ -34,21 +34,45 @@ def status_marker(status_or_verdict: str) -> str:
 def status_badge_html(status: str) -> str:
     """Return styled status chip with marker and label."""
     s = str(status).lower()
-    marker = status_marker(status)
-    if "clean" in s or "resolved" in s:
-        cls = "badge-status-clean"
-    elif "suspect" in s or "triage" in s:
-        cls = "badge-status-suspicious"
-    elif "high" in s or "confirmed" in s or "stego" in s:
+    if "critical" in s or "high" in s or "stego" in s or "confirmed" in s:
+        color = STATUS_HIGH
         cls = "badge-status-high"
+    elif "suspect" in s or "medium" in s or "triage" in s or "analyzing" in s:
+        color = STATUS_SUSPICIOUS
+        cls = "badge-status-suspicious"
+    elif "clean" in s or "low" in s or "resolved" in s:
+        color = STATUS_CLEAN
+        cls = "badge-status-clean"
     else:
+        color = STATUS_GREY
         cls = "badge-media"
+    marker = f'<span class="severity-marker" style="background-color: {color};"></span>'
     return f'<span class="badge-status {cls}">{marker}{html.escape(status)}</span>'
 
+def risk_badge_html(risk: str) -> str:
+    """Return styled risk bracket badge with matching colors."""
+    r = str(risk).lower()
+    if "critical" in r or "high" in r or "stego" in r:
+        color = STATUS_HIGH
+        cls = "badge-status-high"
+    elif "medium" in r or "suspect" in r:
+        color = STATUS_SUSPICIOUS
+        cls = "badge-status-suspicious"
+    else:
+        color = STATUS_CLEAN
+        cls = "badge-status-clean"
+    marker = f'<span class="severity-marker" style="background-color: {color};"></span>'
+    return f'<span class="badge-status {cls}">{marker}{html.escape(risk)}</span>'
+
 def score_pill_html(prob: float) -> str:
-    """Return CVSS-style score badge."""
-    score_val = f"{prob * 10:.1f}" if prob <= 1.0 else f"{prob:.1f}"
-    cls = "score-high" if prob >= 0.50 else "score-clean"
+    """Return calibrated probability percentage badge."""
+    score_val = f"{prob * 100:.1f}%"
+    if prob >= 0.6272:
+        cls = "score-high"
+    elif prob >= 0.40:
+        cls = "score-suspicious"
+    else:
+        cls = "score-clean"
     return f'<span class="score-pill {cls}">{score_val}</span>'
 
 def breadcrumb_html(items: List[Tuple[str, Optional[str]]]) -> str:
@@ -204,18 +228,18 @@ def create_radar_chart(report: Dict[str, Any]) -> go.Figure:
             angularaxis=dict(
                 linecolor='rgba(255, 255, 255, 0.08)',
                 gridcolor='rgba(255, 255, 255, 0.06)',
-                tickfont=dict(size=11, color='#8B8B8B', family='Inter')
+                tickfont=dict(size=12, color='#EDEDED', family='Inter')
             )
         ),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=40, r=40, t=25, b=25),
-        height=320,
+        margin=dict(l=50, r=50, t=30, b=30),
+        height=400,
         showlegend=True,
         legend=dict(
             orientation='h',
             yanchor='bottom',
-            y=-0.2,
+            y=-0.18,
             xanchor='center',
             x=0.5,
             font=dict(size=11, color='#8B8B8B')
@@ -225,7 +249,8 @@ def create_radar_chart(report: Dict[str, Any]) -> go.Figure:
 
 def create_radial_chart(report: Dict[str, Any]) -> go.Figure:
     """
-    Radial / Polar Bar Chart of Per-Method Likelihoods.
+    Proper Polar Bar Chart of Per-Method Stego Likelihoods.
+    Rendered with distinct bar widths and legible typography without clipping.
     """
     methods = [
         "LSB Replacement",
@@ -242,7 +267,6 @@ def create_radial_chart(report: Dict[str, Any]) -> go.Figure:
     # Synthetic method likelihood weights derived from top indicators
     scores = [0.1, 0.1, 0.1, 0.1, 0.1, 0.05]
     if prob >= 0.5:
-        # Boost specific methods based on indicators
         for fn, dev in top_feats:
             f = fn.lower()
             if "dct" in f:
@@ -258,19 +282,22 @@ def create_radial_chart(report: Dict[str, Any]) -> go.Figure:
             elif "echo" in f or "autocorr" in f:
                 scores[5] += 0.40
 
-    # Normalize scores
     total = sum(scores)
-    scores = [min(1.0, round(s / max(0.01, total) * (0.3 + 0.7 * prob), 2)) for s in scores]
+    # Convert to percentage [0..100]
+    pct_scores = [round(min(100.0, (s / max(0.01, total)) * (30.0 + 70.0 * prob)), 1) for s in scores]
 
     fig = go.Figure(go.Barpolar(
-        r=scores,
+        r=pct_scores,
         theta=methods,
+        width=[48] * len(methods),
         marker=dict(
-            color=scores,
-            colorscale=[[0, '#3A1C14'], [0.5, '#A83B1E'], [1.0, '#E5522B']],
+            color=pct_scores,
+            colorscale=[[0, '#2A1810'], [0.4, '#8F3419'], [1.0, '#E5522B']],
+            cmin=0,
+            cmax=100,
             line=dict(color='#E5522B', width=1.5)
         ),
-        opacity=0.85
+        opacity=0.9
     ))
 
     fig.update_layout(
@@ -278,19 +305,21 @@ def create_radial_chart(report: Dict[str, Any]) -> go.Figure:
             bgcolor='rgba(0,0,0,0)',
             radialaxis=dict(
                 visible=True,
-                range=[0, 1.0],
-                showticklabels=False,
+                range=[0, 100],
+                showticklabels=True,
+                ticksuffix='%',
+                tickfont=dict(size=10, color='#8B8B8B', family='JetBrains Mono'),
                 gridcolor='rgba(255, 255, 255, 0.06)'
             ),
             angularaxis=dict(
                 gridcolor='rgba(255, 255, 255, 0.06)',
-                tickfont=dict(size=10, color='#8B8B8B', family='Inter')
+                tickfont=dict(size=12, color='#EDEDED', family='Inter')
             )
         ),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=35, r=35, t=20, b=20),
-        height=320,
+        margin=dict(l=60, r=60, t=30, b=30),
+        height=400,
         showlegend=False
     )
     return fig

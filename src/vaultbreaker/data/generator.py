@@ -164,7 +164,7 @@ def generate_image_dataset(
         raw_dir = Path("data/raw")
 
     # 1. Fetch real cover images
-    num_sources = max(1, num_samples // 4) # Each source produces 2 clean + 2 stego = 4 files
+    num_sources = max(1, num_samples // 2) # Each source produces 1 clean + 1 stego = 2 files (strictly 50/50, no duplicate clean copies)
     if allow_synthetic or num_samples <= 10:
         real_paths = []
     else:
@@ -188,77 +188,57 @@ def generate_image_dataset(
         else:
             raw_cover = generate_procedural_image(H, W, seed=seed + i)
 
-        # Generate 2 clean copies and 2 stego copies per source (balanced 50/50)
-        variants = [
-            (methods[i % len(methods)], payload_rates[i % len(payload_rates)]),
-            (methods[(i + 1) % len(methods)], payload_rates[(i + 1) % len(payload_rates)])
-        ]
-
-        # Clean File 1
-        clean_name_1 = f"{source_id}_clean_01.png"
-        clean_path_1 = img_dir / clean_name_1
-        write_image(clean_path_1, raw_cover)
+        # 1. Clean File (exactly ONE clean file per source)
+        clean_name = f"{source_id}_clean.png"
+        clean_path = img_dir / clean_name
+        write_image(clean_path, raw_cover)
         records.append({
             "source_id": source_id,
-            "filename": clean_name_1,
-            "filepath": str(clean_path_1),
+            "filename": clean_name,
+            "filepath": str(clean_path),
             "media_type": "image",
             "label": 0,
             "method": "clean",
             "payload_rate": 0.0,
-            "sha256": compute_sha256(clean_path_1)
+            "sha256": compute_sha256(clean_path)
         })
 
-        # Clean File 2
-        clean_name_2 = f"{source_id}_clean_02.png"
-        clean_path_2 = img_dir / clean_name_2
-        write_image(clean_path_2, raw_cover)
+        # 2. Stego File (decouple method and payload rate)
+        method = methods[i % len(methods)]
+        rate = payload_rates[(i // len(methods)) % len(payload_rates)]
+        stego_seed = seed + i * 100 + 1
+        p_rng = np.random.RandomState(stego_seed)
+
+        if method == "dct_ac":
+            n_bits = max(32, int((H // 8) * (W // 8) * 15 * rate))
+            payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+            stego_img, _ = embed_image_dct(raw_cover, payload, seed=stego_seed)
+        elif method == "edge_adaptive":
+            n_bits = max(32, int(H * W * rate))
+            payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+            stego_img, _ = embed_image_edge_adaptive(raw_cover, payload, seed=stego_seed)
+        elif method == "lsb_matching":
+            n_bits = max(32, int(H * W * rate))
+            payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+            stego_img, _ = embed_image_lsb_matching(raw_cover, payload, seed=stego_seed)
+        else: # lsb_replacement
+            n_bits = max(32, int(H * W * rate))
+            payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+            stego_img, _ = embed_image_lsb_replacement(raw_cover, payload, seed=stego_seed)
+
+        stego_name = f"{source_id}_stego_{method}_{rate:.2f}.png"
+        stego_path = img_dir / stego_name
+        write_image(stego_path, stego_img)
         records.append({
             "source_id": source_id,
-            "filename": clean_name_2,
-            "filepath": str(clean_path_2),
+            "filename": stego_name,
+            "filepath": str(stego_path),
             "media_type": "image",
-            "label": 0,
-            "method": "clean",
-            "payload_rate": 0.0,
-            "sha256": compute_sha256(clean_path_2)
+            "label": 1,
+            "method": method,
+            "payload_rate": round(float(rate), 2),
+            "sha256": compute_sha256(stego_path)
         })
-
-        # Stego Files
-        for v_idx, (method, rate) in enumerate(variants, 1):
-            stego_seed = seed + i * 100 + v_idx
-            p_rng = np.random.RandomState(stego_seed)
-
-            if method == "dct_ac":
-                n_bits = max(32, int((H // 8) * (W // 8) * 15 * rate))
-                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                stego_img, _ = embed_image_dct(raw_cover, payload, seed=stego_seed)
-            elif method == "edge_adaptive":
-                n_bits = max(32, int(H * W * rate))
-                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                stego_img, _ = embed_image_edge_adaptive(raw_cover, payload, seed=stego_seed)
-            elif method == "lsb_matching":
-                n_bits = max(32, int(H * W * rate))
-                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                stego_img, _ = embed_image_lsb_matching(raw_cover, payload, seed=stego_seed)
-            else: # lsb_replacement
-                n_bits = max(32, int(H * W * rate))
-                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                stego_img, _ = embed_image_lsb_replacement(raw_cover, payload, seed=stego_seed)
-
-            stego_name = f"{source_id}_stego_{method}_{rate:.2f}.png"
-            stego_path = img_dir / stego_name
-            write_image(stego_path, stego_img)
-            records.append({
-                "source_id": source_id,
-                "filename": stego_name,
-                "filepath": str(stego_path),
-                "media_type": "image",
-                "label": 1,
-                "method": method,
-                "payload_rate": round(float(rate), 2),
-                "sha256": compute_sha256(stego_path)
-            })
 
     return records
 
@@ -326,9 +306,9 @@ def generate_audio_dataset(
             "sha256": compute_sha256(clean_path)
         })
 
-        # 2. Stego File
+        # 2. Stego File (decouple method and payload rate)
         method = methods[i % len(methods)]
-        rate = payload_rates[i % len(payload_rates)]
+        rate = payload_rates[(i // len(methods)) % len(payload_rates)]
         stego_seed = seed + i * 50 + 1
         p_rng = np.random.RandomState(stego_seed)
 
@@ -389,7 +369,7 @@ def generate_video_dataset(
         raw_images_dir = raw_dir / "images"
         image_paths = sorted(list(raw_images_dir.glob("*.png")) + list(raw_images_dir.glob("*.jpg")))
 
-    num_sources = max(1, num_samples // 4) # Each source produces 2 clean + 2 stego = 4 files
+    num_sources = max(1, num_samples // 2) # Each source produces 1 clean + 1 stego = 2 files
     if allow_synthetic or num_samples <= 10:
         real_video_covers = []
     else:
@@ -417,65 +397,47 @@ def generate_video_dataset(
         else:
             raw_frames, _ = generate_procedural_video(H, W, fps, duration, seed=seed + i)
 
-        # 2 Clean Copies
-        clean_name_1 = f"{source_id}_clean_01.mkv"
-        clean_path_1 = vid_dir / clean_name_1
-        write_video(clean_path_1, raw_frames, fps=fps)
+        # 1. Clean File (exactly ONE clean file per source)
+        clean_name = f"{source_id}_clean.mkv"
+        clean_path = vid_dir / clean_name
+        write_video(clean_path, raw_frames, fps=fps)
         records.append({
             "source_id": source_id,
-            "filename": clean_name_1,
-            "filepath": str(clean_path_1),
+            "filename": clean_name,
+            "filepath": str(clean_path),
             "media_type": "video",
             "label": 0,
             "method": "clean",
             "payload_rate": 0.0,
-            "sha256": compute_sha256(clean_path_1)
+            "sha256": compute_sha256(clean_path)
         })
 
-        clean_name_2 = f"{source_id}_clean_02.mkv"
-        clean_path_2 = vid_dir / clean_name_2
-        write_video(clean_path_2, raw_frames, fps=fps)
+        # 2. Stego File (decouple method and payload rate)
+        method = methods[i % len(methods)]
+        rate = payload_rates[(i // len(methods)) % len(payload_rates)]
+        stego_seed = seed + i * 50 + 1
+        p_rng = np.random.RandomState(stego_seed)
+        total_pixels = len(raw_frames) * H * W
+        n_bits = max(32, int(total_pixels * rate))
+        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+
+        if method == "frame_lsb_matching":
+            stego_frames, _ = embed_video_frame_lsb_matching(raw_frames, payload, seed=stego_seed)
+        else:
+            stego_frames, _ = embed_video_frame_lsb(raw_frames, payload, seed=stego_seed)
+
+        stego_name = f"{source_id}_stego_{method}_{rate:.2f}.mkv"
+        stego_path = vid_dir / stego_name
+        write_video(stego_path, stego_frames, fps=fps)
         records.append({
             "source_id": source_id,
-            "filename": clean_name_2,
-            "filepath": str(clean_path_2),
+            "filename": stego_name,
+            "filepath": str(stego_path),
             "media_type": "video",
-            "label": 0,
-            "method": "clean",
-            "payload_rate": 0.0,
-            "sha256": compute_sha256(clean_path_2)
+            "label": 1,
+            "method": method,
+            "payload_rate": round(float(rate), 2),
+            "sha256": compute_sha256(stego_path)
         })
-
-        # 2 Stego Copies
-        variants = [
-            (methods[i % len(methods)], payload_rates[i % len(payload_rates)]),
-            (methods[(i + 1) % len(methods)], payload_rates[(i + 1) % len(payload_rates)])
-        ]
-
-        for v_idx, (method, rate) in enumerate(variants, 1):
-            stego_seed = seed + i * 100 + v_idx
-            p_rng = np.random.RandomState(stego_seed)
-            total_pixels = len(raw_frames) * H * W
-            n_bits = max(32, int(total_pixels * rate))
-            payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-
-            if method == "frame_lsb_matching":
-                stego_frames, _ = embed_video_frame_lsb_matching(raw_frames, payload, seed=stego_seed)
-            else:
-                stego_frames, _ = embed_video_frame_lsb(raw_frames, payload, seed=stego_seed)
-
-            stego_name = f"{source_id}_stego_{method}_{rate:.2f}.mkv"
-            stego_path = vid_dir / stego_name
-            write_video(stego_path, stego_frames, fps=fps)
-            records.append({
-                "source_id": source_id,
-                "filename": stego_name,
-                "filepath": str(stego_path),
-                "media_type": "video",
-                "label": 1,
-                "method": method,
-                "payload_rate": round(float(rate), 2),
-                "sha256": compute_sha256(stego_path)
-            })
 
     return records

@@ -40,25 +40,44 @@ def compute_bootstrap_ci(
     y_true: np.ndarray,
     y_prob: np.ndarray,
     threshold: float = 0.5,
+    source_ids: Optional[np.ndarray] = None,
     n_boot: int = 1000,
     seed: int = 42
 ) -> Dict[str, List[float]]:
-    """Calculates 1000-sample bootstrap 95% confidence intervals for accuracy and ROC-AUC."""
+    """Calculates cluster bootstrap 95% confidence intervals by resampling unique sources."""
     n = len(y_true)
     if n < 4:
         return {"accuracy_ci95": [0.0, 1.0], "roc_auc_ci95": [0.5, 0.5]}
     rng = np.random.RandomState(seed)
     accs, aucs = [], []
-    for _ in range(n_boot):
-        idx = rng.choice(n, size=n, replace=True)
-        yt_b = y_true[idx]
-        yp_b = y_prob[idx]
-        accs.append(float(accuracy_score(yt_b, yp_b >= threshold)))
-        if len(np.unique(yt_b)) > 1:
-            try:
-                aucs.append(float(roc_auc_score(yt_b, yp_b)))
-            except Exception:
-                pass
+
+    if source_ids is not None and len(source_ids) == n:
+        unique_sources = np.unique(source_ids)
+        source_indices = {s: np.where(source_ids == s)[0] for s in unique_sources}
+        n_clusters = len(unique_sources)
+        for _ in range(n_boot):
+            sampled_sources = rng.choice(unique_sources, size=n_clusters, replace=True)
+            boot_idx = np.concatenate([source_indices[s] for s in sampled_sources])
+            yt_b = y_true[boot_idx]
+            yp_b = y_prob[boot_idx]
+            accs.append(float(accuracy_score(yt_b, yp_b >= threshold)))
+            if len(np.unique(yt_b)) > 1:
+                try:
+                    aucs.append(float(roc_auc_score(yt_b, yp_b)))
+                except Exception:
+                    pass
+    else:
+        for _ in range(n_boot):
+            idx = rng.choice(n, size=n, replace=True)
+            yt_b = y_true[idx]
+            yp_b = y_prob[idx]
+            accs.append(float(accuracy_score(yt_b, yp_b >= threshold)))
+            if len(np.unique(yt_b)) > 1:
+                try:
+                    aucs.append(float(roc_auc_score(yt_b, yp_b)))
+                except Exception:
+                    pass
+
     acc_lo, acc_hi = np.percentile(accs, [2.5, 97.5]) if accs else (0.0, 1.0)
     auc_lo, auc_hi = np.percentile(aucs, [2.5, 97.5]) if aucs else (0.5, 0.5)
     return {
@@ -66,8 +85,13 @@ def compute_bootstrap_ci(
         "roc_auc_ci95": [round(float(auc_lo), 4), round(float(auc_hi), 4)]
     }
 
-def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5) -> Dict[str, Any]:
-    """Calculates all key steganography detection performance metrics with 95% CIs."""
+def compute_metrics(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    threshold: float = 0.5,
+    source_ids: Optional[np.ndarray] = None
+) -> Dict[str, Any]:
+    """Calculates all key steganography detection performance metrics with cluster bootstrap 95% CIs."""
     y_pred = (y_prob >= threshold).astype(int)
     
     acc = float(accuracy_score(y_true, y_pred))
@@ -82,7 +106,9 @@ def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0
 
     pe, pe_thresh = compute_detection_error_pe(y_true, y_prob)
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist()
-    ci_dict = compute_bootstrap_ci(y_true, y_prob, threshold=threshold)
+    ci_dict = compute_bootstrap_ci(y_true, y_prob, threshold=threshold, source_ids=source_ids)
+
+    unique_src_count = int(len(np.unique(source_ids))) if source_ids is not None else int(len(y_true))
 
     return {
         "accuracy": round(acc, 4),
@@ -94,6 +120,8 @@ def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0
         "p_e_threshold": round(pe_thresh, 4),
         "confusion_matrix": cm,
         "sample_count": len(y_true),
+        "unique_sources": unique_src_count,
+        "sample_count_str": f"{len(y_true)} files ({unique_src_count} unique sources)",
         "accuracy_ci95": ci_dict["accuracy_ci95"],
         "roc_auc_ci95": ci_dict["roc_auc_ci95"]
     }
@@ -130,6 +158,7 @@ class StegoEvaluationSuite:
                 y = data_by_format[y_key]
                 methods = data_by_format[m_key]
                 rates = data_by_format[r_key]
+                sources = data_by_format.get(f"sources_{m_type}", np.array([f"{m_type}_src_{idx:04d}" for idx in range(len(X))]))
 
                 for i in range(len(X)):
                     x_tensor = torch.from_numpy(X[i]).float().unsqueeze(0)
@@ -138,6 +167,7 @@ class StegoEvaluationSuite:
                     cal_prob = self.calibrator.calibrate_prob(raw_prob)
 
                     records.append({
+                        "source_id": str(sources[i]),
                         "media_type": m_type,
                         "label": int(y[i]),
                         "method": str(methods[i]),
@@ -174,7 +204,9 @@ class StegoEvaluationSuite:
         # 1. Overall Metrics
         y_true_all = df["label"].to_numpy()
         y_prob_all = df["cal_prob"].to_numpy()
-        full_results["overall"] = compute_metrics(y_true_all, y_prob_all, threshold=thresh)
+        full_results["overall"] = compute_metrics(
+            y_true_all, y_prob_all, threshold=thresh, source_ids=df["source_id"].to_numpy()
+        )
 
         # 2. Per-Format Metrics
         full_results["per_format"] = {}
@@ -182,24 +214,30 @@ class StegoEvaluationSuite:
             sub = df[df["media_type"] == m_type]
             if not sub.empty:
                 full_results["per_format"][m_type] = compute_metrics(
-                    sub["label"].to_numpy(), sub["cal_prob"].to_numpy(), threshold=thresh
+                    sub["label"].to_numpy(), sub["cal_prob"].to_numpy(), threshold=thresh,
+                    source_ids=sub["source_id"].to_numpy()
                 )
 
         # Audio LSB headline metric (LSB replacement + LSB matching, separating echo hiding)
         sub_aud_lsb = df[(df["media_type"] == "audio") & (df["method"].isin(["clean", "lsb_replacement", "lsb_matching"]))]
         if not sub_aud_lsb.empty and len(sub_aud_lsb["label"].unique()) > 1:
             full_results["audio_lsb_headline"] = compute_metrics(
-                sub_aud_lsb["label"].to_numpy(), sub_aud_lsb["cal_prob"].to_numpy(), threshold=thresh
+                sub_aud_lsb["label"].to_numpy(), sub_aud_lsb["cal_prob"].to_numpy(), threshold=thresh,
+                source_ids=sub_aud_lsb["source_id"].to_numpy()
             )
 
         # 3. Per-Method Metrics
         full_results["per_method"] = {}
         for method in sorted(df["method"].unique()):
             sub = df[df["method"] == method]
+            u_src = int(len(sub["source_id"].unique()))
             full_results["per_method"][method] = {
                 "accuracy": round(float(accuracy_score(sub["label"], sub["cal_prob"] >= thresh)), 4),
                 "mean_cal_prob": round(float(np.mean(sub["cal_prob"])), 4),
-                "sample_count": len(sub)
+                "sample_count": len(sub),
+                "unique_sources": u_src,
+                "sample_count_str": f"{len(sub)} files ({u_src} unique sources)",
+                "insufficient_samples": bool(u_src < 30)
             }
 
         # 4. Accuracy vs Payload Rate (Cleanly rounded)
@@ -208,9 +246,13 @@ class StegoEvaluationSuite:
         sorted_rates = np.sort(stego_sub["payload_rate"].unique())
         for rate in sorted_rates:
             r_sub = stego_sub[stego_sub["payload_rate"] == rate]
+            u_src = int(len(r_sub["source_id"].unique()))
             full_results["accuracy_vs_payload"][f"{float(rate):.2f}"] = {
                 "accuracy": round(float(np.mean(r_sub["cal_prob"] >= thresh)), 4),
-                "sample_count": len(r_sub)
+                "sample_count": len(r_sub),
+                "unique_sources": u_src,
+                "sample_count_str": f"{len(r_sub)} files ({u_src} unique sources)",
+                "insufficient_samples": bool(u_src < 30)
             }
 
         # 5. Generate Plots

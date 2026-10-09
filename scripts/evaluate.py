@@ -21,6 +21,8 @@ from vaultbreaker.utils.io import ensure_dir
 from vaultbreaker.models.unified_net import VaultBreakerUnifiedNet
 from vaultbreaker.training.calibrate import TemperatureScalingCalibrator
 from vaultbreaker.training.evaluate import StegoEvaluationSuite
+from vaultbreaker.training.dataset import MultiModalStegoDataset
+from vaultbreaker.training.trainer import UnifiedTrainer
 
 logger = get_logger("Evaluate")
 
@@ -111,11 +113,11 @@ def run_cross_method_generalization(train_data: dict, test_data: dict) -> dict:
 
     return results
 
-def run_ablations(train_data: dict, test_data: dict, unified_metrics: dict) -> dict:
+def run_ablations(train_data: dict, val_data: dict, test_data: dict, unified_metrics: dict, config: dict, models_dir: Path) -> dict:
     """
     Runs the 3 scientific ablations:
-    (a) Unified shared head vs separate model per format
-    (b) With vs without auxiliary method head
+    (a) Unified shared head vs separate model per format (honest per-format comparison)
+    (b) With vs without auxiliary method head (actively trains unified net without aux head)
     (c) Handcrafted features + neural net vs best baseline (Histogram Gradient Boosting / RF)
     """
     logger.info("Executing 3 Scientific Ablations...")
@@ -134,21 +136,123 @@ def run_ablations(train_data: dict, test_data: dict, unified_metrics: dict) -> d
             acc = float(accuracy_score(y_te, probs >= 0.5))
             sep_metrics[m_type] = {"accuracy": round(acc, 4), "roc_auc": round(auc, 4), "sample_count": len(y_te)}
 
+    comparison_notes = []
+    for m_type in ["image", "audio", "video"]:
+        rf_acc = sep_metrics.get(m_type, {}).get("accuracy", 0.0)
+        uni_acc = unified_metrics.get("per_format", {}).get(m_type, {}).get("accuracy", 0.0)
+        if rf_acc > uni_acc:
+            comparison_notes.append(f"On {m_type}, separate RandomForest achieves higher accuracy ({rf_acc:.4f} vs {uni_acc:.4f}).")
+        else:
+            comparison_notes.append(f"On {m_type}, unified model achieves higher or equal accuracy ({uni_acc:.4f} vs {rf_acc:.4f}).")
+
     ablations["ablation_a_separate_vs_shared"] = {
         "description": "Separate per-format RandomForest models vs Unified Cross-Modal Network",
         "separate_per_format": sep_metrics,
         "unified_model": {
             m: {"accuracy": unified_metrics["per_format"][m]["accuracy"], "roc_auc": unified_metrics["per_format"][m]["roc_auc"]}
             for m in unified_metrics.get("per_format", {})
-        }
+        },
+        "finding": " ".join(comparison_notes)
     }
 
     # (b) With vs without auxiliary head
+    logger.info("Ablation (b): Actively training and evaluating unified model WITHOUT auxiliary head...")
+    feat_cfg = config.get("features", {})
+    model_cfg = config.get("models", {})
+    train_cfg = config.get("training", {})
+    device_str = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device_str)
+
+    model_no_aux = VaultBreakerUnifiedNet(
+        img_dim=feat_cfg.get("image_dim", 72),
+        aud_dim=feat_cfg.get("audio_dim", 56),
+        vid_dim=feat_cfg.get("video_dim", 64),
+        latent_dim=model_cfg.get("latent_dim", 128),
+        hidden_dim=model_cfg.get("hidden_dim", 256),
+        dropout=model_cfg.get("dropout", 0.2),
+        use_aux_head=False,
+        num_methods=8
+    )
+
+    train_ds = MultiModalStegoDataset(train_data)
+    val_ds = MultiModalStegoDataset(val_data)
+    trainer_no_aux = UnifiedTrainer(
+        model=model_no_aux,
+        learning_rate=train_cfg.get("learning_rate", 0.001),
+        weight_decay=train_cfg.get("weight_decay", 0.0001),
+        aux_loss_weight=0.0,
+        device=device
+    )
+
+    no_aux_save_path = models_dir / "unified_model_no_aux.pt"
+    trainer_no_aux.fit(
+        train_ds=train_ds,
+        val_ds=val_ds,
+        epochs=train_cfg.get("epochs", 25),
+        batch_size=train_cfg.get("batch_size", 32),
+        early_stopping_patience=train_cfg.get("early_stopping_patience", 6),
+        save_path=no_aux_save_path
+    )
+
+    model_no_aux.eval()
+    no_aux_per_fmt = {}
+    all_y_no_aux = []
+    all_probs_no_aux = []
+    for m_type in ["image", "audio", "video"]:
+        x_te = test_data.get(f"X_{m_type}")
+        y_te = test_data.get(f"y_{m_type}")
+        if x_te is not None and len(x_te) > 0:
+            with torch.no_grad():
+                xt = torch.tensor(x_te, dtype=torch.float32).to(device)
+                logits, _, _ = model_no_aux(xt, m_type)
+                probs = torch.sigmoid(logits).cpu().numpy().flatten()
+            acc = float(accuracy_score(y_te, probs >= 0.5))
+            auc = float(roc_auc_score(y_te, probs)) if len(np.unique(y_te)) > 1 else 0.5
+            no_aux_per_fmt[m_type] = {"accuracy": round(acc, 4), "roc_auc": round(auc, 4), "sample_count": len(y_te)}
+            all_y_no_aux.extend(y_te)
+            all_probs_no_aux.extend(probs)
+
+    all_y_arr = np.array(all_y_no_aux)
+    all_p_arr = np.array(all_probs_no_aux)
+    no_aux_ov_acc = float(accuracy_score(all_y_arr, all_p_arr >= 0.5))
+    no_aux_ov_auc = float(roc_auc_score(all_y_arr, all_p_arr)) if len(np.unique(all_y_arr)) > 1 else 0.5
+
+    with_aux_auc = unified_metrics["overall"]["roc_auc"]
+    diff_auc = with_aux_auc - no_aux_ov_auc
+    if abs(diff_auc) < 0.01:
+        finding_b = (
+            f"The auxiliary head achieves comparable ROC-AUC to the model without it "
+            f"({with_aux_auc:.4f} with-aux vs {no_aux_ov_auc:.4f} without-aux, diff {diff_auc:+.4f}). "
+            f"The data does not show significant regularizing gains from auxiliary method supervision."
+        )
+    elif diff_auc > 0:
+        finding_b = (
+            f"The auxiliary head modestly improves ROC-AUC "
+            f"({with_aux_auc:.4f} with-aux vs {no_aux_ov_auc:.4f} without-aux, diff +{diff_auc:.4f})."
+        )
+    else:
+        finding_b = (
+            f"The model without auxiliary head achieves slightly higher ROC-AUC "
+            f"({no_aux_ov_auc:.4f} without-aux vs {with_aux_auc:.4f} with-aux, diff {-diff_auc:.4f}). "
+            f"The multi-task auxiliary head did not improve binary detection performance."
+        )
+
     ablations["ablation_b_auxiliary_head"] = {
-        "description": "Unified network trained with auxiliary method-prediction head vs without",
-        "with_aux_head_overall_auc": unified_metrics["overall"]["roc_auc"],
-        "with_aux_head_overall_acc": unified_metrics["overall"]["accuracy"],
-        "note": "Auxiliary head provides regularizing multi-task gradients preventing feature collapse."
+        "description": "Unified network trained WITH auxiliary method head vs WITHOUT auxiliary method head",
+        "with_aux_head": {
+            "overall_roc_auc": unified_metrics["overall"]["roc_auc"],
+            "overall_accuracy": unified_metrics["overall"]["accuracy"],
+            "per_format": {
+                m: {"accuracy": unified_metrics["per_format"][m]["accuracy"], "roc_auc": unified_metrics["per_format"][m]["roc_auc"]}
+                for m in unified_metrics.get("per_format", {})
+            }
+        },
+        "without_aux_head": {
+            "overall_roc_auc": round(no_aux_ov_auc, 4),
+            "overall_accuracy": round(no_aux_ov_acc, 4),
+            "per_format": no_aux_per_fmt
+        },
+        "finding": finding_b
     }
 
     # (c) Handcrafted features + neural head vs best classical baseline (HistGradientBoosting)
@@ -189,11 +293,13 @@ def main():
 
     test_matrix_path = features_dir / "split_test.npz"
     train_matrix_path = features_dir / "split_train.npz"
+    val_matrix_path = features_dir / "split_val.npz"
     if not test_matrix_path.exists():
         raise FileNotFoundError(f"Test matrix not found at {test_matrix_path}")
 
     test_data = dict(np.load(test_matrix_path, allow_pickle=True))
     train_data = dict(np.load(train_matrix_path, allow_pickle=True))
+    val_data = dict(np.load(val_matrix_path, allow_pickle=True)) if val_matrix_path.exists() else {}
 
     feat_cfg = config.get("features", {})
     model_cfg = config.get("models", {})
@@ -234,7 +340,7 @@ def main():
     eval_results["shortcut_sanity_check"] = sanity_auc
 
     # Ablations
-    ablations = run_ablations(train_data, test_data, eval_results)
+    ablations = run_ablations(train_data, val_data, test_data, eval_results, config, models_dir)
     eval_results["ablations"] = ablations
 
     # Update metrics.json

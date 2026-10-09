@@ -66,12 +66,14 @@ def main():
             methods = m_sub["method"].to_numpy()
             rates = m_sub["payload_rate"].to_numpy(dtype=np.float32)
             filepaths = m_sub["filepath"].to_numpy()
+            sources = m_sub["source_id"].to_numpy()
 
             data_by_format[f"X_{m_type}"] = norm_X
             data_by_format[f"y_{m_type}"] = y
             data_by_format[f"methods_{m_type}"] = methods
             data_by_format[f"rates_{m_type}"] = rates
             data_by_format[f"filepaths_{m_type}"] = filepaths
+            data_by_format[f"sources_{m_type}"] = sources
 
         split_matrix_path = features_dir / f"split_{split_name}.npz"
         np.savez_compressed(split_matrix_path, **data_by_format)

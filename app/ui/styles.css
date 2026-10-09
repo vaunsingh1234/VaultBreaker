@@ -302,12 +302,12 @@ section[data-testid="stSidebar"] > div {
     text-transform: uppercase;
 }
 
-/* CVSS-style score chip */
+/* Calibrated score percentage pill */
 .score-pill {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 2px 7px;
+    padding: 2px 8px;
     border-radius: 4px;
     display: inline-block;
 }
@@ -316,6 +316,12 @@ section[data-testid="stSidebar"] > div {
     background: rgba(229, 82, 43, 0.15);
     color: #ff6b4a;
     border: 1px solid rgba(229, 82, 43, 0.3);
+}
+
+.score-suspicious {
+    background: rgba(224, 179, 65, 0.15);
+    color: #facc15;
+    border: 1px solid rgba(224, 179, 65, 0.3);
 }
 
 .score-clean {
@@ -359,27 +365,26 @@ section[data-testid="stSidebar"] > div {
 }
 
 /* --- Kanban Findings Board --- */
-.kanban-col {
-    background-color: #171717;
-    border: 1px solid var(--border-card);
-    border-radius: var(--radius-lg);
-    padding: 14px 12px;
-    min-height: 480px;
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: #171717 !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    border-radius: var(--radius-lg) !important;
+    padding: 10px !important;
 }
 
 .kanban-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-bottom: 12px;
-    margin-bottom: 12px;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
     border-bottom: 1px solid var(--border-card);
 }
 
 .kanban-col-title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-muted);
     display: flex;
@@ -394,6 +399,15 @@ section[data-testid="stSidebar"] > div {
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.kanban-empty {
+    color: #555555;
+    font-size: 11px;
+    font-style: italic;
+    text-align: center;
+    padding: 30px 10px;
 }
 
 .kanban-card {
@@ -427,7 +441,7 @@ section[data-testid="stSidebar"] > div {
 }
 
 .card-file {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--text-primary);
     margin-bottom: 8px;
@@ -478,9 +492,63 @@ section[data-testid="stSidebar"] > div {
     background-color: #1D1D1D;
 }
 
-/* --- Streamlit Native Overrides --- */
-/* Buttons */
-.stButton > button {
+/* --- Sidebar Button Rules --- */
+/* Sidebar Nav Items: Flat List Items */
+section[data-testid="stSidebar"] .stButton > button {
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-left: 3px solid transparent !important;
+    border-radius: 0 6px 6px 0 !important;
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    padding: 8px 12px !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    margin-bottom: 3px !important;
+    transition: all 0.12s ease-in-out !important;
+}
+
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255, 255, 255, 0.04) !important;
+    color: var(--text-primary) !important;
+    border-color: transparent !important;
+    border-left-color: rgba(229, 82, 43, 0.4) !important;
+}
+
+/* Active navigation item in sidebar */
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: rgba(229, 82, 43, 0.09) !important;
+    border-color: transparent !important;
+    border-left: 3px solid var(--accent-orange) !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+}
+
+/* Primary "New scan +" button is the ONLY boxed button in sidebar */
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div:nth-child(2) .stButton > button {
+    background: var(--accent-orange) !important;
+    border: 1px solid var(--accent-orange) !important;
+    border-radius: var(--radius-sm) !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    text-align: center !important;
+    justify-content: center !important;
+    padding: 8px 16px !important;
+    margin-bottom: 14px !important;
+    box-shadow: 0 4px 12px rgba(229, 82, 43, 0.25) !important;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div:nth-child(2) .stButton > button:hover {
+    background: var(--accent-orange-hover) !important;
+    border-color: var(--accent-orange-hover) !important;
+}
+
+/* General Page Buttons */
+.block-container .stButton > button {
     background-color: #222222 !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border-card) !important;
@@ -491,19 +559,19 @@ section[data-testid="stSidebar"] > div {
     transition: all 0.15s ease !important;
 }
 
-.stButton > button:hover {
+.block-container .stButton > button:hover {
     border-color: var(--accent-orange) !important;
     color: #FFFFFF !important;
     background-color: #282828 !important;
 }
 
-.stButton > button[kind="primary"] {
+.block-container .stButton > button[kind="primary"] {
     background-color: var(--accent-orange) !important;
     border-color: var(--accent-orange) !important;
     color: #FFFFFF !important;
 }
 
-.stButton > button[kind="primary"]:hover {
+.block-container .stButton > button[kind="primary"]:hover {
     background-color: var(--accent-orange-hover) !important;
 }
 
@@ -571,44 +639,116 @@ section[data-testid="stSidebar"] > div {
     background-color: rgba(255, 255, 255, 0.02);
 }
 
-/* Sidebar user card */
-.sidebar-user {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-card);
-    margin-top: 2rem;
+/* Sidebar Telemetry Panel */
+.sidebar-telemetry {
+    background: #171717;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    margin-top: 10px;
 }
 
-.user-avatar {
-    width: 32px;
-    height: 32px;
+.telemetry-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.telemetry-row:last-child {
+    margin-bottom: 0px;
+}
+
+.telemetry-label {
+    color: #8B8B8B;
+    font-size: 11px;
+}
+
+.telemetry-val {
+    color: #EDEDED;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 11px;
+}
+
+/* How It Works Strip */
+.how-it-works-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 8px;
+    margin-bottom: 20px;
+}
+
+.step-card {
+    background: #171717;
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.step-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.step-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent-orange);
+    background: rgba(229, 82, 43, 0.12);
     border-radius: 50%;
-    background: #252525;
+    width: 18px;
+    height: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent-orange);
-    font-weight: 700;
-    font-size: 12px;
-    border: 1px solid rgba(229, 82, 43, 0.4);
+    font-family: 'JetBrains Mono', monospace;
 }
 
-.user-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.user-name {
+.step-title {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-primary);
 }
 
-.user-role {
-    font-size: 10px;
+.step-desc {
+    font-size: 11px;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    line-height: 1.4;
 }
+
+/* Three Format Benchmark Stat Cards */
+.bench-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 110px;
+}
+
+.bench-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.bench-badge {
+    font-size: 10px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #EDEDED;
+}
+

@@ -1,244 +1,299 @@
 {
   "overall": {
-    "accuracy": 0.8165,
-    "precision": 0.9314,
-    "recall": 0.6835,
-    "f1": 0.7884,
-    "roc_auc": 0.9258,
-    "p_e": 0.1745,
-    "p_e_threshold": 0.5648,
+    "accuracy": 0.8002,
+    "precision": 0.9148,
+    "recall": 0.662,
+    "f1": 0.7682,
+    "roc_auc": 0.899,
+    "p_e": 0.1839,
+    "p_e_threshold": 0.52,
     "confusion_matrix": [
       [
-        264,
-        14
+        472,
+        31
       ],
       [
-        88,
-        190
+        170,
+        333
       ]
     ],
-    "sample_count": 556,
+    "sample_count": 1006,
+    "unique_sources": 503,
+    "sample_count_str": "1006 files (503 unique sources)",
     "accuracy_ci95": [
-      0.7842,
-      0.8489
+      0.7763,
+      0.8241
     ],
     "roc_auc_ci95": [
-      0.9031,
-      0.9442
+      0.8812,
+      0.917
     ]
   },
   "per_format": {
     "image": {
-      "accuracy": 0.8877,
-      "precision": 0.9652,
-      "recall": 0.8043,
-      "f1": 0.8775,
-      "roc_auc": 0.9627,
-      "p_e": 0.0942,
-      "p_e_threshold": 0.5667,
+      "accuracy": 0.88,
+      "precision": 0.9597,
+      "recall": 0.7933,
+      "f1": 0.8686,
+      "roc_auc": 0.9372,
+      "p_e": 0.11,
+      "p_e_threshold": 0.5274,
       "confusion_matrix": [
         [
-          134,
-          4
+          290,
+          10
         ],
         [
-          27,
-          111
+          62,
+          238
         ]
       ],
-      "sample_count": 276,
+      "sample_count": 600,
+      "unique_sources": 300,
+      "sample_count_str": "600 files (300 unique sources)",
       "accuracy_ci95": [
-        0.8478,
-        0.9204
+        0.855,
+        0.9033
       ],
       "roc_auc_ci95": [
-        0.9401,
-        0.9806
+        0.9176,
+        0.9549
       ]
     },
     "audio": {
-      "accuracy": 0.5658,
-      "precision": 0.6923,
-      "recall": 0.2368,
-      "f1": 0.3529,
-      "roc_auc": 0.6084,
-      "p_e": 0.4211,
-      "p_e_threshold": 0.5648,
+      "accuracy": 0.5629,
+      "precision": 0.65,
+      "recall": 0.2727,
+      "f1": 0.3842,
+      "roc_auc": 0.6044,
+      "p_e": 0.4056,
+      "p_e_threshold": 0.5208,
       "confusion_matrix": [
         [
-          68,
-          8
+          122,
+          21
         ],
         [
-          58,
-          18
+          104,
+          39
         ]
       ],
-      "sample_count": 152,
+      "sample_count": 286,
+      "unique_sources": 143,
+      "sample_count_str": "286 files (143 unique sources)",
       "accuracy_ci95": [
-        0.4934,
-        0.6447
+        0.5245,
+        0.6014
       ],
       "roc_auc_ci95": [
-        0.5154,
-        0.6923
+        0.5558,
+        0.6514
       ]
     },
     "video": {
-      "accuracy": 0.9609,
-      "precision": 0.9683,
-      "recall": 0.9531,
-      "f1": 0.9606,
-      "roc_auc": 0.998,
-      "p_e": 0.0156,
-      "p_e_threshold": 0.2386,
+      "accuracy": 0.9667,
+      "precision": 1.0,
+      "recall": 0.9333,
+      "f1": 0.9655,
+      "roc_auc": 0.9972,
+      "p_e": 0.025,
+      "p_e_threshold": 0.5535,
       "confusion_matrix": [
         [
-          62,
-          2
+          60,
+          0
         ],
         [
-          3,
-          61
+          4,
+          56
         ]
       ],
-      "sample_count": 128,
+      "sample_count": 120,
+      "unique_sources": 60,
+      "sample_count_str": "120 files (60 unique sources)",
       "accuracy_ci95": [
-        0.9219,
-        0.9922
+        0.925,
+        0.9917
       ],
       "roc_auc_ci95": [
-        0.9932,
+        0.9903,
         1.0
       ]
     }
   },
   "audio_lsb_headline": {
-    "accuracy": 0.6512,
-    "precision": 0.6667,
-    "recall": 0.3019,
-    "f1": 0.4156,
-    "roc_auc": 0.6569,
-    "p_e": 0.3885,
-    "p_e_threshold": 0.646,
+    "accuracy": 0.6245,
+    "precision": 0.5532,
+    "recall": 0.2766,
+    "f1": 0.3688,
+    "roc_auc": 0.6151,
+    "p_e": 0.3984,
+    "p_e_threshold": 0.5208,
     "confusion_matrix": [
       [
-        68,
-        8
+        122,
+        21
       ],
       [
-        37,
-        16
+        68,
+        26
       ]
     ],
-    "sample_count": 129,
+    "sample_count": 237,
+    "unique_sources": 143,
+    "sample_count_str": "237 files (143 unique sources)",
     "accuracy_ci95": [
-      0.5736,
-      0.7364
+      0.5805,
+      0.6653
     ],
     "roc_auc_ci95": [
-      0.5665,
-      0.7537
+      0.5574,
+      0.6752
     ]
   },
   "per_method": {
     "clean": {
-      "accuracy": 0.9496,
-      "mean_cal_prob": 0.226,
-      "sample_count": 278
+      "accuracy": 0.9384,
+      "mean_cal_prob": 0.2672,
+      "sample_count": 503,
+      "unique_sources": 503,
+      "sample_count_str": "503 files (503 unique sources)",
+      "insufficient_samples": false
     },
     "dct_ac": {
       "accuracy": 1.0,
-      "mean_cal_prob": 0.9947,
-      "sample_count": 35
+      "mean_cal_prob": 0.9862,
+      "sample_count": 89,
+      "unique_sources": 89,
+      "sample_count_str": "89 files (89 unique sources)",
+      "insufficient_samples": false
     },
     "echo_hiding": {
-      "accuracy": 0.087,
-      "mean_cal_prob": 0.4827,
-      "sample_count": 23
+      "accuracy": 0.2653,
+      "mean_cal_prob": 0.5263,
+      "sample_count": 49,
+      "unique_sources": 49,
+      "sample_count_str": "49 files (49 unique sources)",
+      "insufficient_samples": false
     },
     "edge_adaptive": {
-      "accuracy": 0.6216,
-      "mean_cal_prob": 0.7175,
-      "sample_count": 37
+      "accuracy": 0.4557,
+      "mean_cal_prob": 0.5696,
+      "sample_count": 79,
+      "unique_sources": 79,
+      "sample_count_str": "79 files (79 unique sources)",
+      "insufficient_samples": false
     },
     "frame_lsb": {
-      "accuracy": 1.0,
-      "mean_cal_prob": 0.9723,
-      "sample_count": 32
+      "accuracy": 0.9565,
+      "mean_cal_prob": 0.9485,
+      "sample_count": 23,
+      "unique_sources": 23,
+      "sample_count_str": "23 files (23 unique sources)",
+      "insufficient_samples": true
     },
     "frame_lsb_matching": {
-      "accuracy": 0.9062,
-      "mean_cal_prob": 0.9119,
-      "sample_count": 32
+      "accuracy": 0.9189,
+      "mean_cal_prob": 0.9319,
+      "sample_count": 37,
+      "unique_sources": 37,
+      "sample_count_str": "37 files (37 unique sources)",
+      "insufficient_samples": false
     },
     "lsb_matching": {
-      "accuracy": 0.6562,
-      "mean_cal_prob": 0.791,
-      "sample_count": 64
+      "accuracy": 0.5614,
+      "mean_cal_prob": 0.7071,
+      "sample_count": 114,
+      "unique_sources": 114,
+      "sample_count_str": "114 files (114 unique sources)",
+      "insufficient_samples": false
     },
     "lsb_replacement": {
-      "accuracy": 0.4909,
-      "mean_cal_prob": 0.6829,
-      "sample_count": 55
+      "accuracy": 0.6696,
+      "mean_cal_prob": 0.7605,
+      "sample_count": 112,
+      "unique_sources": 112,
+      "sample_count_str": "112 files (112 unique sources)",
+      "insufficient_samples": false
     }
   },
   "accuracy_vs_payload": {
     "0.10": {
-      "accuracy": 0.7358,
-      "sample_count": 53
+      "accuracy": 0.5941,
+      "sample_count": 101,
+      "unique_sources": 101,
+      "sample_count_str": "101 files (101 unique sources)",
+      "insufficient_samples": false
     },
     "0.20": {
-      "accuracy": 0.75,
-      "sample_count": 72
+      "accuracy": 0.6614,
+      "sample_count": 127,
+      "unique_sources": 127,
+      "sample_count_str": "127 files (127 unique sources)",
+      "insufficient_samples": false
     },
     "0.30": {
-      "accuracy": 0.6216,
-      "sample_count": 37
+      "accuracy": 0.8767,
+      "sample_count": 73,
+      "unique_sources": 73,
+      "sample_count_str": "73 files (73 unique sources)",
+      "insufficient_samples": false
     },
     "0.40": {
-      "accuracy": 0.7317,
-      "sample_count": 41
+      "accuracy": 0.5167,
+      "sample_count": 60,
+      "unique_sources": 60,
+      "sample_count_str": "60 files (60 unique sources)",
+      "insufficient_samples": false
     },
     "0.50": {
       "accuracy": 1.0,
-      "sample_count": 35
+      "sample_count": 80,
+      "unique_sources": 80,
+      "sample_count_str": "80 files (80 unique sources)",
+      "insufficient_samples": false
     },
     "0.70": {
-      "accuracy": 0.2143,
-      "sample_count": 14
+      "accuracy": 0.1935,
+      "sample_count": 31,
+      "unique_sources": 31,
+      "sample_count_str": "31 files (31 unique sources)",
+      "insufficient_samples": false
     },
     "1.00": {
-      "accuracy": 0.2308,
-      "sample_count": 26
+      "accuracy": 0.2581,
+      "sample_count": 31,
+      "unique_sources": 31,
+      "sample_count_str": "31 files (31 unique sources)",
+      "insufficient_samples": false
     }
   },
   "cross_method_generalization": {
     "lsb_matching": {
-      "auc": 0.9898,
-      "sample_count": 172
+      "auc": 0.918,
+      "sample_count": 363
     },
     "edge_adaptive": {
-      "auc": 0.8519,
-      "sample_count": 175
+      "auc": 0.711,
+      "sample_count": 379
     },
     "dct_ac": {
-      "auc": 0.9308,
-      "sample_count": 173
+      "auc": 0.9046,
+      "sample_count": 389
     }
   },
   "shortcut_sanity_check": {
     "image": {
-      "auc": 0.4509,
-      "sample_count": 728
+      "auc": 0.5275,
+      "sample_count": 1395
     },
     "audio": {
-      "auc": 0.5095,
-      "sample_count": 345
+      "auc": 0.4628,
+      "sample_count": 706
     },
     "video": {
-      "auc": 0.527,
-      "sample_count": 226
+      "auc": 0.4561,
+      "sample_count": 244
     }
   },
   "ablations": {
@@ -246,73 +301,111 @@
       "description": "Separate per-format RandomForest models vs Unified Cross-Modal Network",
       "separate_per_format": {
         "image": {
-          "accuracy": 0.9058,
-          "roc_auc": 0.9698,
-          "sample_count": 276
+          "accuracy": 0.8717,
+          "roc_auc": 0.9443,
+          "sample_count": 600
         },
         "audio": {
-          "accuracy": 0.5724,
-          "roc_auc": 0.6066,
-          "sample_count": 152
+          "accuracy": 0.5909,
+          "roc_auc": 0.6072,
+          "sample_count": 286
         },
         "video": {
-          "accuracy": 0.8438,
-          "roc_auc": 0.9316,
-          "sample_count": 128
+          "accuracy": 0.925,
+          "roc_auc": 0.9779,
+          "sample_count": 120
         }
       },
       "unified_model": {
         "image": {
-          "accuracy": 0.8877,
-          "roc_auc": 0.9627
+          "accuracy": 0.88,
+          "roc_auc": 0.9372
         },
         "audio": {
-          "accuracy": 0.5658,
-          "roc_auc": 0.6084
+          "accuracy": 0.5629,
+          "roc_auc": 0.6044
         },
         "video": {
-          "accuracy": 0.9609,
-          "roc_auc": 0.998
+          "accuracy": 0.9667,
+          "roc_auc": 0.9972
         }
-      }
+      },
+      "finding": "On image, unified model achieves higher or equal accuracy (0.8800 vs 0.8717). On audio, separate RandomForest achieves higher accuracy (0.5909 vs 0.5629). On video, unified model achieves higher or equal accuracy (0.9667 vs 0.9250)."
     },
     "ablation_b_auxiliary_head": {
-      "description": "Unified network trained with auxiliary method-prediction head vs without",
-      "with_aux_head_overall_auc": 0.9258,
-      "with_aux_head_overall_acc": 0.8165,
-      "note": "Auxiliary head provides regularizing multi-task gradients preventing feature collapse."
+      "description": "Unified network trained WITH auxiliary method head vs WITHOUT auxiliary method head",
+      "with_aux_head": {
+        "overall_roc_auc": 0.899,
+        "overall_accuracy": 0.8002,
+        "per_format": {
+          "image": {
+            "accuracy": 0.88,
+            "roc_auc": 0.9372
+          },
+          "audio": {
+            "accuracy": 0.5629,
+            "roc_auc": 0.6044
+          },
+          "video": {
+            "accuracy": 0.9667,
+            "roc_auc": 0.9972
+          }
+        }
+      },
+      "without_aux_head": {
+        "overall_roc_auc": 0.8974,
+        "overall_accuracy": 0.7982,
+        "per_format": {
+          "image": {
+            "accuracy": 0.8767,
+            "roc_auc": 0.9296,
+            "sample_count": 600
+          },
+          "audio": {
+            "accuracy": 0.5594,
+            "roc_auc": 0.6106,
+            "sample_count": 286
+          },
+          "video": {
+            "accuracy": 0.975,
+            "roc_auc": 0.9994,
+            "sample_count": 120
+          }
+        }
+      },
+      "finding": "The auxiliary head achieves comparable ROC-AUC to the model without it (0.8990 with-aux vs 0.8974 without-aux, diff +0.0016). The data does not show significant regularizing gains from auxiliary method supervision."
     },
     "ablation_c_deep_vs_gbdt": {
       "description": "Deep Unified Network vs HistGradientBoosting baseline",
       "hist_gradient_boosting": {
         "image": {
-          "accuracy": 0.9094,
-          "roc_auc": 0.9777,
-          "sample_count": 276
+          "accuracy": 0.905,
+          "roc_auc": 0.9709,
+          "sample_count": 600
         },
         "audio": {
-          "accuracy": 0.5526,
-          "roc_auc": 0.5954,
-          "sample_count": 152
+          "accuracy": 0.5839,
+          "roc_auc": 0.5996,
+          "sample_count": 286
         },
         "video": {
-          "accuracy": 0.9688,
-          "roc_auc": 0.9885,
-          "sample_count": 128
+          "accuracy": 0.9833,
+          "roc_auc": 0.9986,
+          "sample_count": 120
         }
       },
       "unified_network": {
         "image": {
-          "accuracy": 0.8877,
-          "roc_auc": 0.9627
+          "accuracy": 0.88,
+          "roc_auc": 0.9372
         },
         "audio": {
-          "accuracy": 0.5658,
-          "roc_auc": 0.6084
+          "accuracy": 0.5629,
+          "roc_auc": 0.6044
         },
         "video": {
-          "accuracy": 0.9609,
-          "roc_auc": 0.998
+          "accuracy": 0.9667,
+          "roc_auc": 0.9972
         }
       }
     }
