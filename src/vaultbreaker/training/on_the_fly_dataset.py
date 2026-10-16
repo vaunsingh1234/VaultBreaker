@@ -268,6 +268,8 @@ class OnTheFlyPairedStegoDataset(Dataset):
                 if len(raw_frames) < 8:
                     pad = np.zeros((8 - len(raw_frames), raw_frames.shape[1], raw_frames.shape[2]), dtype=np.uint8)
                     raw_frames = np.concatenate([raw_frames, pad], axis=0)
+                if raw_frames.shape[1:3] != (128, 128):
+                    raw_frames = np.array([cv2.resize(f, (128, 128)) for f in raw_frames])
                 clean_frames = raw_frames[:8]
             except Exception:
                 clean_frames = np.zeros((8, 128, 128), dtype=np.uint8)
@@ -285,13 +287,17 @@ class OnTheFlyPairedStegoDataset(Dataset):
                     stego_frames, _ = embed_video_frame_lsb_matching(clean_frames, payload, seed=stego_seed)
                 else:
                     stego_frames, _ = embed_video_frame_lsb(clean_frames, payload, seed=stego_seed)
+                stego_frames = np.asarray(stego_frames, dtype=np.uint8)
             except Exception:
                 stego_frames = clean_frames.copy()
 
+            clean_frames = np.asarray(clean_frames, dtype=np.uint8)
+            stego_frames = np.asarray(stego_frames, dtype=np.uint8)
+
             clean_frames, stego_frames = self._augment_video(clean_frames, stego_frames)
 
-            clean_tensor = torch.from_numpy(clean_frames).unsqueeze(1).float() # (8, 1, 128, 128)
-            stego_tensor = torch.from_numpy(stego_frames).unsqueeze(1).float() # (8, 1, 128, 128)
+            clean_tensor = torch.from_numpy(clean_frames).unsqueeze(1).float()  # (8, 1, 128, 128)
+            stego_tensor = torch.from_numpy(stego_frames).unsqueeze(1).float()  # (8, 1, 128, 128)
 
             m_idx = METHOD_TO_IDX.get(method, 1)
 

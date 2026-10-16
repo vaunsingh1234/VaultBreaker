@@ -249,7 +249,7 @@ def hide_message(
         flat = samples.flatten()
 
         if method == "lsb_replacement":
-            flat[indices] = (flat[indices] & ~1) | stream_bits.astype(np.int16)
+            flat[indices] = np.bitwise_and(flat[indices], ~1) | stream_bits.astype(np.int16)
         else: # lsb_matching
             curr_bits = flat[indices] & 1
             diff_mask = curr_bits != stream_bits

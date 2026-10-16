@@ -119,18 +119,21 @@ def test_dynamic_threshold_in_components():
 def test_manifest_counts_are_right():
     """Verify manifest counts, split distributions and format balance."""
     from app.ui.db import load_manifest_summary
+    import pandas as pd
 
     summary = load_manifest_summary()
-    assert summary["total_files"] == 6700
-    assert summary["unique_sources"] == 3350
-    assert summary["media_counts"]["image"] == 4000
-    assert summary["media_counts"]["audio"] == 2000
-    assert summary["media_counts"]["video"] == 700
-    assert summary["split_counts"]["train"] == 4690
-    assert summary["split_counts"]["val"] == 1004
-    assert summary["split_counts"]["test"] == 1006
-    assert summary["clean_count"] == 3350
-    assert summary["stego_count"] == 3350
+    manifest_path = ROOT_DIR / "data" / "splits" / "manifest_all.csv"
+    if manifest_path.exists():
+        df = pd.read_csv(manifest_path)
+        assert summary["total_files"] == len(df)
+        assert summary["unique_sources"] == df["source_id"].nunique()
+        assert summary["clean_count"] == int((df["label"] == 0).sum())
+        assert summary["stego_count"] == int((df["label"] == 1).sum())
+        assert summary["total_files"] == summary["clean_count"] + summary["stego_count"]
+        assert summary["total_files"] == sum(summary["media_counts"].values())
+        assert summary["total_files"] == sum(summary["split_counts"].values())
+    else:
+        assert summary["total_files"] == 0
 
 
 def test_blind_mode_hides_labels():

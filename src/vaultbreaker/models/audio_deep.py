@@ -101,6 +101,7 @@ class Audio1DBackbone(nn.Module):
 
         # Layer 1: Frozen difference filter bank
         self.diff_layer = AudioDiffConv1d()
+        self.diff_filter = self.diff_layer
 
         # Input projection
         self.in_proj = nn.Sequential(

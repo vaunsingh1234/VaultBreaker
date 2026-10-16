@@ -45,7 +45,13 @@ class VaultBreakerDeepNet(nn.Module):
         # 1. Specialized Deep Backbones
         self.image_deep = SRNetBackbone(base_channels=base_channels, latent_dim=latent_dim, dropout=dropout * 0.5)
         self.audio_deep = Audio1DBackbone(base_channels=base_channels, latent_dim=latent_dim, dropout=dropout * 0.5)
-        self.video_deep = VideoTemporalBackbone(base_channels=base_channels, latent_dim=latent_dim, dropout=dropout * 0.5)
+        # Shared frame backbone: Video uses the identical SRNet frame backbone as images (T2.6)
+        self.video_deep = VideoTemporalBackbone(
+            frame_backbone=self.image_deep,
+            base_channels=base_channels,
+            latent_dim=latent_dim,
+            dropout=dropout * 0.5
+        )
 
         # 2. Modality Fusion Branches (Deep + Handcrafted -> 128-d latent)
         self.fusion = nn.ModuleDict({
@@ -78,6 +84,18 @@ class VaultBreakerDeepNet(nn.Module):
             self.aux_head = AuxiliaryMethodHead(latent_dim=latent_dim, num_methods=num_methods, hidden_dim=64, dropout=dropout)
         else:
             self.aux_head = None
+
+    @property
+    def image_backbone(self) -> SRNetBackbone:
+        return self.image_deep
+
+    @property
+    def audio_backbone(self) -> Audio1DBackbone:
+        return self.audio_deep
+
+    @property
+    def video_backbone(self) -> VideoTemporalBackbone:
+        return self.video_deep
 
     def encode(
         self,

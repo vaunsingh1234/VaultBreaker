@@ -219,6 +219,7 @@ class SRNetBackbone(nn.Module):
 
         # Layer 1: Frozen SRM filter bank
         self.srm_layer = SRMConv2d()
+        self.srm = self.srm_layer
 
         # Layers 2-4: Unpooled residual blocks (256x256 preserved!)
         self.block1 = nn.Sequential(

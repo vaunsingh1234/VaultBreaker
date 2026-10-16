@@ -29,7 +29,7 @@ def embed_image_lsb_replacement(
         indices = np.arange(n_bits)
 
     # LSB Replacement: clear bit 0 and insert payload bit
-    flat[indices] = (flat[indices] & ~1) | (payload_bits.astype(np.uint8) & 1)
+    flat[indices] = (flat[indices] & 0xFE) | (payload_bits.astype(np.uint8) & 1)
     return flat.reshape(stego.shape), indices
 
 def extract_image_lsb_replacement(

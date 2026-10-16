@@ -27,7 +27,7 @@ def embed_audio_lsb_replacement(
 
     # Convert to unsigned 16-bit view to perform bitwise operations safely
     u_samples = samples.view(np.uint16)
-    u_samples[indices] = (u_samples[indices] & ~1) | (payload_bits.astype(np.uint16) & 1)
+    u_samples[indices] = (u_samples[indices] & 0xFFFE) | (payload_bits.astype(np.uint16) & 1)
 
     return samples, indices
 

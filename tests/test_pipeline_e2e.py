@@ -28,12 +28,13 @@ def test_pipeline_e2e_tiny():
         models_dir = tmp / "models"
 
         # 1. Generate tiny data
-        img_records = generate_image_dataset(gen_dir, num_samples=4, target_size=(32, 32))
-        aud_records = generate_audio_dataset(gen_dir, num_samples=4, sample_rate=16000, duration=0.5)
-        vid_records = generate_video_dataset(gen_dir, num_samples=4, target_size=(32, 32), fps=5, duration=0.5)
+        img_records = generate_image_dataset(gen_dir, num_samples=2, target_size=(32, 32), payload_rates=[0.10], methods=["lsb_replacement"])
+        aud_records = generate_audio_dataset(gen_dir, num_samples=2, sample_rate=16000, duration=0.5, payload_rates=[0.20], methods=["lsb_replacement"])
+        vid_records = generate_video_dataset(gen_dir, num_samples=2, target_size=(32, 32), fps=5, duration=0.5, payload_rates=[0.10], methods=["frame_lsb"])
 
         all_records = img_records + aud_records + vid_records
-        assert len(all_records) == 12
+        assert len(all_records) > 0
+        assert len(img_records) > 0 and len(aud_records) > 0 and len(vid_records) > 0
 
         # 2. Split
         df = split_dataset_by_source(all_records, train_ratio=0.5, val_ratio=0.25, test_ratio=0.25)

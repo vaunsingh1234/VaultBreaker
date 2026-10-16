@@ -100,7 +100,14 @@ def get_ram_aware_dataset_sizes(
 def download_stream(urls: List[str], dest_file: Path, timeout: int = 300) -> bool:
     """Download file with progress logging and mirror failover."""
     dest_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
+    import ssl
+    try:
+        import certifi
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        ssl_ctx = ssl._create_unverified_context()
+
     for url in urls:
         logger.info(f"Connecting to download source: {url}")
         try:
@@ -108,7 +115,7 @@ def download_stream(urls: List[str], dest_file: Path, timeout: int = 300) -> boo
                 url,
                 headers={"User-Agent": "VaultBreaker-Forensics/2.0 (Mozilla/5.0)"}
             )
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as response:
                 total_size = response.headers.get("Content-Length")
                 total_bytes = int(total_size) if total_size else 0
                 downloaded = 0

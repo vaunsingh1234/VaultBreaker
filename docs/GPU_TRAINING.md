@@ -1,0 +1,154 @@
+# VaultBreaker GPU Training Guide (Google Colab & Kaggle)
+
+This guide provides step-by-step instructions to train the **VaultBreaker Unified Deep Steganography Neural Network** on cloud GPU accelerators (e.g., Google Colab, Kaggle Notebooks, or AWS/GCP GPU instances).
+
+---
+
+## 1. Overview & Cloud Architecture
+
+VaultBreaker's deep architecture combines:
+- **SRNetBackbone** (Images): 30 frozen Spatial Rich Model (SRM) high-pass filters + 3 unpooled residual blocks + 4 pooled residual blocks + Global Average Pooling (GAP) -> 128-d latent space.
+- **Audio1DBackbone** (Audio): 8 frozen high-order difference filters + 2 unpooled 1D residual blocks + 4 strided 1D residual blocks + GAP -> 128-d latent space.
+- **VideoTemporalBackbone** (Video): Weight-shared frame backbone across sampled frames + multi-pool aggregation (Temporal Mean, Temporal Max, Learned Temporal Self-Attention) -> 128-d latent space.
+- **SharedStegoHead & AuxiliaryMethodHead**: Unified binary decision logit + auxiliary method classification supervision.
+
+### Target Performance on GPU Profile
+- **Training Budget**: 20,000 image covers, 8,000 audio windows, 1,500 video clips over 30 epochs with AdamW, Cosine Annealing, and PyTorch Mixed Precision (AMP).
+- **Target Accuracy / ROC-AUC**:
+  - Image LSB ($\ge 0.2$ bpp): $\ge 0.95$ ROC-AUC
+  - Audio LSB ($\ge 0.4$): $\ge 0.90$ ROC-AUC
+  - Video Frame LSB: $\ge 0.95$ ROC-AUC
+- **Checkpoint Constraint**: Under 90 MB total file size (current checkpoint: ~8.90 MB).
+
+---
+
+## 2. Seed-Based Zero-Storage Data Regeneration
+
+> [!NOTE]
+> **No Pre-Stored Multi-Gigabyte Data Upload Required!**
+> VaultBreaker uses a deterministic procedural data pipeline (`seed: 42`). When running on a remote cloud GPU, you do **not** need to upload large dataset archives. Running the dataset generation script creates identical source files, source-disjoint splits, and on-the-fly pairing automatically.
+
+---
+
+## 3. Step-by-Step Instructions: Google Colab
+
+### Step 1: Open a New Colab Notebook and Set Runtime to GPU
+1. Go to [Google Colab](https://colab.research.google.com).
+2. Click **Runtime** > **Change runtime type**.
+3. Select **T4 GPU** (free tier) or **A100 / L4 GPU** (Colab Pro).
+
+### Step 2: Clone Repository & Install Dependencies
+Run in a Colab code cell:
+```bash
+# Clone the VaultBreaker repository
+!git clone https://github.com/vaunsingh1234/VaultBreaker.git
+%cd VaultBreaker
+
+# Install package dependencies
+!pip install --upgrade pip
+!pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+!pip install -r requirements.txt
+!pip install -e .
+```
+
+### Step 3: Deterministically Generate the GPU Dataset
+Run:
+```bash
+# Generates disjoint train/val/test splits with zero cross-split source leakage
+!python scripts/make_dataset.py --profile gpu --seed 42
+```
+
+### Step 4: Launch Deep Training with GPU Acceleration & AMP
+Run:
+```bash
+# Runs full 30-epoch training on CUDA GPU with automatic mixed precision and gradient clipping
+!python scripts/train_deep.py --profile gpu --device cuda --seed 42
+```
+Training logs, epoch timing, learning rate schedules, and validation AUCs will be saved to `models_saved/deep_training_log.csv`. The best checkpoint is automatically saved to `models_saved/deep_model.pt` and temperature-calibrated to `models_saved/deep_calibrator.pt`.
+
+### Step 5: Evaluate Test Set & Generate Heatmap
+Run:
+```bash
+# Evaluates on the held-out test split, computes 95% bootstrap CIs, and generates method x payload heatmap
+!python scripts/evaluate.py --device cuda
+```
+
+### Step 6: Download Checkpoint to Local Machine
+Run:
+```python
+from google.colab import files
+files.download('models_saved/deep_model.pt')
+files.download('models_saved/deep_calibrator.pt')
+files.download('docs/RESULTS/method_payload_heatmap.png')
+files.download('docs/RESULTS/metrics.json')
+```
+
+---
+
+## 4. Step-by-Step Instructions: Kaggle Notebooks
+
+1. Create a new notebook on [Kaggle](https://www.kaggle.com).
+2. Under **Notebook settings** (right panel):
+   - Set **Accelerator** to **GPU T4 x 2** or **GPU P100**.
+   - Set **Internet** to **On**.
+3. Execute the following in cell 1:
+```bash
+!git clone https://github.com/vaunsingh1234/VaultBreaker.git
+%cd VaultBreaker
+!pip install -r requirements.txt
+!pip install -e .
+```
+4. Execute dataset generation and training in cell 2:
+```bash
+# Deterministic generation
+!python scripts/make_dataset.py --profile gpu --seed 42
+
+# Train model
+!python scripts/train_deep.py --profile gpu --device cuda --seed 42
+
+# Full test evaluation
+!python scripts/evaluate.py --device cuda
+```
+5. Check output files in `/kaggle/working/VaultBreaker/models_saved/` and download `deep_model.pt`.
+
+---
+
+## 5. Checkpoint Hosting & Distribution
+
+VaultBreaker's deep model checkpoint size is **8.90 MB**, which easily fits into standard Git repositories without needing specialized high-bandwidth hosting. However, for open-source model releases:
+
+### Option A: Direct Git Commit
+Because the file size is ~8.9 MB (< 100 MB GitHub file size limit), you can commit directly:
+```bash
+git add models_saved/deep_model.pt models_saved/deep_calibrator.pt
+git commit -m "feat: Add trained deep model checkpoint (8.9 MB)"
+git push origin main
+```
+
+### Option B: Hugging Face Hub (Optional)
+If publishing to Hugging Face:
+```python
+from huggingface_hub import HfApi
+api = HfApi()
+api.upload_file(
+    path_or_fileobj="models_saved/deep_model.pt",
+    path_in_repo="deep_model.pt",
+    repo_id="your-username/vaultbreaker-deep-stego",
+    repo_type="model"
+)
+```
+
+---
+
+## 6. Training Command Reference
+
+| Profile | Command | Covers (Img / Aud / Vid) | Target Hardware | Epochs | Expected Wall Clock |
+|---|---|---|---|---|---|
+| **Smoke** | `python scripts/train_deep.py --profile smoke --device cpu` | 60 / 40 / 12 | Laptop CPU | 2 | ~4.5 min |
+| **Laptop** | `python scripts/train_deep.py --profile laptop --device auto` | 500 / 300 / 50 | Apple Silicon (MPS) / PC | 8 | ~25 min |
+| **GPU** | `python scripts/train_deep.py --profile gpu --device cuda` | 20,000 / 8,000 / 1,500 | T4 / A100 / L4 GPU | 30 | ~2.5 hours |
+
+To resume from an existing checkpoint after an interruption:
+```bash
+python scripts/train_deep.py --profile gpu --device cuda --resume models_saved/deep_model.pt
+```

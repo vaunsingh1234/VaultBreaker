@@ -103,9 +103,9 @@ deep_models:
 
 profiles:
   smoke:
-    image_covers: 500
-    audio_windows: 300
-    video_clips: 50
+    image_covers: 60
+    audio_windows: 40
+    video_clips: 12
     epochs: 2
     batch_size: 16
     learning_rate: 0.001

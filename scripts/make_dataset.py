@@ -28,6 +28,7 @@ logger = get_logger("MakeDataset")
 def main():
     parser = argparse.ArgumentParser(description="Generate steganography dataset from real covers for VaultBreaker.")
     parser.add_argument("--config", type=str, default="configs/default.yaml", help="Path to config file")
+    parser.add_argument("--profile", type=str, default=None, choices=["smoke", "laptop", "gpu"], help="Profile to drive target dataset size")
     parser.add_argument("--fast", action="store_true", help="Generate tiny dataset for fast demonstration / testing")
     parser.add_argument("--allow-synthetic", action="store_true", help="Allow fallback to procedural synthetic data if download fails")
     parser.add_argument("--own-only", action="store_true", help="Use only user-provided files in data/raw/ without downloading public benchmarks")
@@ -48,19 +49,26 @@ def main():
     vid_cfg = ds_cfg.get("video", {})
     split_cfg = ds_cfg.get("split", {})
 
-    # Compute RAM/disk-aware dataset sizes
-    sizes = get_ram_aware_dataset_sizes(
-        config_img=img_cfg.get("num_samples", 4000),
-        config_aud=aud_cfg.get("num_samples", 2000),
-        config_vid=vid_cfg.get("num_samples", 700),
-        fast=args.fast
-    )
-    n_img, n_aud, n_vid = sizes["images"], sizes["audio"], sizes["video"]
-
-    if args.fast:
-        logger.info(f"=== RUNNING IN FAST MODE (Target Files: Images={n_img}, Audio={n_aud}, Video={n_vid}) ===")
+    if args.profile:
+        profile_cfg = config.get("profiles", {}).get(args.profile, {})
+        n_img = profile_cfg.get("image_covers", 500 if args.profile == "smoke" else 20000)
+        n_aud = profile_cfg.get("audio_windows", 300 if args.profile == "smoke" else 8000)
+        n_vid = profile_cfg.get("video_clips", 50 if args.profile == "smoke" else 1500)
+        logger.info(f"=== RUNNING WITH PROFILE '{args.profile.upper()}' (Targets: Images={n_img}, Audio={n_aud}, Video={n_vid}) ===")
     else:
-        logger.info(f"=== RUNNING IN FULL SCALE MODE (Target Files: Images={n_img}, Audio={n_aud}, Video={n_vid}) ===")
+        # Compute RAM/disk-aware dataset sizes
+        sizes = get_ram_aware_dataset_sizes(
+            config_img=img_cfg.get("num_samples", 4000),
+            config_aud=aud_cfg.get("num_samples", 2000),
+            config_vid=vid_cfg.get("num_samples", 700),
+            fast=args.fast
+        )
+        n_img, n_aud, n_vid = sizes["images"], sizes["audio"], sizes["video"]
+
+        if args.fast:
+            logger.info(f"=== RUNNING IN FAST MODE (Target Files: Images={n_img}, Audio={n_aud}, Video={n_vid}) ===")
+        else:
+            logger.info(f"=== RUNNING IN FULL SCALE MODE (Target Files: Images={n_img}, Audio={n_aud}, Video={n_vid}) ===")
 
     all_records = []
 
