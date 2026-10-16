@@ -16,6 +16,8 @@ from vaultbreaker.models.unified_net import VaultBreakerUnifiedNet
 from vaultbreaker.training.calibrate import TemperatureScalingCalibrator
 from vaultbreaker.explain import explain_image, explain_audio, explain_video, get_top_features
 
+from vaultbreaker.inference.structure_check import check_structure
+
 logger = get_logger("Predictor")
 
 class VaultBreakerPredictor:
@@ -82,17 +84,74 @@ class VaultBreakerPredictor:
     ) -> Dict[str, Any]:
         """
         Scan a single file from disk.
-        Returns complete forensic analysis payload.
+        Returns complete forensic analysis payload including rule-based structure check.
         """
         p = Path(filepath)
-        # 1. Magic byte inspection
-        media_type, format_name = self.router.inspect_file(p)
 
-        # 2. Extract features
+        # 1. Rule-based structure check (works across all formats)
+        structure_res = check_structure(p)
+        structure_findings = structure_res.get("finding_messages", [])
+        is_suspicious_structure = structure_res.get("is_suspicious", False)
+
+        # 2. Magic byte inspection & routing
+        try:
+            media_type, format_name = self.router.inspect_file(p)
+        except RouterError:
+            # Format cannot be inspected by statistical router -> Unsupported verdict
+            return {
+                "file_name": p.name,
+                "media_type": "unknown",
+                "format": structure_res.get("format", "unsupported"),
+                "verdict": "Unsupported",
+                "risk_level": "UNKNOWN",
+                "notice": "Unsupported format for statistical detector; structure check only.",
+                "structure_findings": structure_findings,
+                "structure_check": structure_res,
+                "calibrated_probability": None,
+                "raw_probability": None,
+                "raw_logit": None,
+                "decision_threshold": float(self.calibrator.decision_threshold),
+                "temperature": float(self.calibrator.temperature),
+                "top_features": [],
+                "latent_code_summary": None,
+                "explanation": {}
+            }
+
+        # 3. Lossy inputs (JPEG, MP3, MP4): structure check only
+        if format_name.lower() in ("jpeg", "mp3", "mp4"):
+            notice = "The statistical detector is not reliable on compressed files; structure check only"
+            if is_suspicious_structure:
+                verdict = "SUSPECTED STEGO"
+                risk = "HIGH RISK"
+            else:
+                verdict = "No hidden data detected"
+                risk = "BENIGN / CLEAN"
+
+            report = {
+                "file_name": p.name,
+                "media_type": media_type,
+                "format": format_name,
+                "verdict": verdict,
+                "risk_level": risk,
+                "notice": notice,
+                "structure_findings": structure_findings,
+                "structure_check": structure_res,
+                "calibrated_probability": None,
+                "raw_probability": None,
+                "raw_logit": None,
+                "decision_threshold": float(self.calibrator.decision_threshold),
+                "temperature": float(self.calibrator.temperature),
+                "top_features": [],
+                "latent_code_summary": None
+            }
+            if generate_explanation:
+                report["explanation"] = self._generate_visual_explanation(p, media_type)
+            return report
+
+        # 4. Uncompressed/lossless media: Extract features & model forward pass
         raw_vec = self.feature_pipeline.extract_single(p, media_type)
         norm_vec = self.feature_pipeline.transform_single(raw_vec, media_type, self.scalers)
 
-        # 3. Model forward pass
         x_tensor = torch.from_numpy(norm_vec).float().unsqueeze(0).to(self.device)
         with torch.no_grad():
             logit, aux_logits, z = self.model(x_tensor, media_type)
@@ -100,11 +159,19 @@ class VaultBreakerPredictor:
             raw_prob = float(torch.sigmoid(logit).item())
             latent_code = z.squeeze(0).cpu().numpy().tolist()
 
-        # 4. Calibrate probability and assign risk
+        # 5. Calibrate probability and assign risk
         cal_prob = self.calibrator.calibrate_prob(raw_prob)
-        verdict, risk, details = self.calibrator.get_verdict_and_risk(cal_prob)
+        ml_verdict, risk, details = self.calibrator.get_verdict_and_risk(cal_prob)
 
-        # 5. Top contributory features
+        # Elevate to suspected stego if structure check flags anomalies
+        if is_suspicious_structure:
+            verdict = "SUSPECTED STEGO"
+            if risk in ("BENIGN / CLEAN", "LOW RISK"):
+                risk = "HIGH RISK"
+        else:
+            verdict = "SUSPECTED STEGO" if ml_verdict == "SUSPECTED STEGO" else "No hidden data detected"
+
+        # 6. Top contributory features
         top_feats = get_top_features(norm_vec, media_type, top_k=6)
 
         report = {
@@ -113,6 +180,8 @@ class VaultBreakerPredictor:
             "format": format_name,
             "verdict": verdict,
             "risk_level": risk,
+            "structure_findings": structure_findings,
+            "structure_check": structure_res,
             "calibrated_probability": float(cal_prob),
             "raw_probability": float(raw_prob),
             "raw_logit": float(raw_logit),
@@ -125,7 +194,7 @@ class VaultBreakerPredictor:
             }
         }
 
-        # 6. Optional media-specific explanation artifacts
+        # 7. Media explanation
         if generate_explanation:
             report["explanation"] = self._generate_visual_explanation(p, media_type)
 

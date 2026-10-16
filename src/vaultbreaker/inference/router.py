@@ -78,6 +78,10 @@ class MediaRouter:
         if header.startswith(b"fLaC"):
             return "audio", "flac"
 
+        # MP3: ID3 tag or MPEG frame sync
+        if header.startswith(b"ID3") or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0):
+            return "audio", "mp3"
+
         raise RouterError(
             f"Unsupported or corrupted file format. Magic bytes: {header[:12].hex()}"
         )

@@ -126,3 +126,32 @@ def test_split_sizes_full_simulation():
     for fmt in ["image", "audio", "video"]:
         fmt_count = len(test_df[test_df["media_type"] == fmt])
         assert fmt_count >= 50, f"Expected >= 50 test samples for {fmt}, got {fmt_count}"
+
+
+def test_audio_multi_window_stays_in_same_split():
+    """Verify that multiple 3-second windows cut from the same parent audio file always stay in the same split."""
+    records = []
+    # Simulate 50 parent audio files, each yielding 3 windows of 3s (clean + stego pairs = 6 entries per parent)
+    for p_idx in range(50):
+        parent_id = f"aud_parent_{p_idx:03d}"
+        for w_idx in range(3):
+            win_name = f"{parent_id}_win{w_idx:02d}"
+            records.append({
+                "source_id": parent_id,
+                "filename": f"{win_name}_clean.wav",
+                "media_type": "audio",
+                "label": 0
+            })
+            records.append({
+                "source_id": parent_id,
+                "filename": f"{win_name}_stego.wav",
+                "media_type": "audio",
+                "label": 1
+            })
+
+    df = split_dataset_by_source(records, train_ratio=0.70, val_ratio=0.15, test_ratio=0.15, seed=42)
+
+    for p_idx in range(50):
+        parent_id = f"aud_parent_{p_idx:03d}"
+        parent_splits = df[df["source_id"] == parent_id]["split"].unique()
+        assert len(parent_splits) == 1, f"Parent audio {parent_id} was leaked across splits: {parent_splits}"

@@ -148,6 +148,7 @@ def generate_image_dataset(
     payload_rates: List[float] = [0.10, 0.20, 0.30, 0.50],
     methods: List[str] = ["lsb_replacement", "lsb_matching", "edge_adaptive", "dct_ac"],
     allow_synthetic: bool = False,
+    own_only: bool = False,
     seed: int = 42
 ) -> List[Dict[str, Any]]:
     """
@@ -164,16 +165,17 @@ def generate_image_dataset(
         raw_dir = Path("data/raw")
 
     # 1. Fetch real cover images
-    num_sources = max(1, num_samples // 2) # Each source produces 1 clean + 1 stego = 2 files (strictly 50/50, no duplicate clean copies)
-    if allow_synthetic or num_samples <= 10:
-        real_paths = []
-    else:
-        real_paths = prepare_real_images(
-            raw_dir=raw_dir,
-            max_images=num_sources,
-            target_size=target_size,
-            allow_synthetic=allow_synthetic
-        )
+    num_sources = max(1, num_samples // 2)
+    real_paths = prepare_real_images(
+        raw_dir=raw_dir,
+        max_images=num_sources,
+        target_size=target_size,
+        allow_synthetic=allow_synthetic,
+        own_only=own_only
+    )
+
+    if real_paths and (own_only or len(real_paths) < num_sources):
+        num_sources = len(real_paths)
 
     logger.info(f"Generating image dataset from {len(real_paths) if real_paths else num_sources} sources...")
 
@@ -251,6 +253,7 @@ def generate_audio_dataset(
     payload_rates: List[float] = [0.20, 0.40, 0.70, 1.00],
     methods: List[str] = ["lsb_replacement", "lsb_matching", "echo_hiding"],
     allow_synthetic: bool = False,
+    own_only: bool = False,
     seed: int = 42
 ) -> List[Dict[str, Any]]:
     """
@@ -263,17 +266,18 @@ def generate_audio_dataset(
     if raw_dir is None:
         raw_dir = Path("data/raw")
 
-    num_sources = max(1, num_samples // 2) # Each source produces 1 clean + 1 stego
-    if allow_synthetic or num_samples <= 10:
-        real_paths = []
-    else:
-        real_paths = prepare_real_audio(
-            raw_dir=raw_dir,
-            max_audio=num_sources,
-            target_sr=sample_rate,
-            duration=duration,
-            allow_synthetic=allow_synthetic
-        )
+    num_sources = max(1, num_samples // 2)
+    real_paths = prepare_real_audio(
+        raw_dir=raw_dir,
+        max_audio=num_sources,
+        target_sr=sample_rate,
+        duration=duration,
+        allow_synthetic=allow_synthetic,
+        own_only=own_only
+    )
+
+    if real_paths and (own_only or len(real_paths) < num_sources):
+        num_sources = len(real_paths)
 
     logger.info(f"Generating audio dataset from {len(real_paths) if real_paths else num_sources} sources...")
     target_samples = int(sample_rate * duration)
@@ -352,6 +356,7 @@ def generate_video_dataset(
     payload_rates: List[float] = [0.10, 0.20, 0.40],
     methods: List[str] = ["frame_lsb", "frame_lsb_matching"],
     allow_synthetic: bool = False,
+    own_only: bool = False,
     seed: int = 42
 ) -> List[Dict[str, Any]]:
     """
@@ -369,19 +374,20 @@ def generate_video_dataset(
         raw_images_dir = raw_dir / "images"
         image_paths = sorted(list(raw_images_dir.glob("*.png")) + list(raw_images_dir.glob("*.jpg")))
 
-    num_sources = max(1, num_samples // 2) # Each source produces 1 clean + 1 stego = 2 files
-    if allow_synthetic or num_samples <= 10:
-        real_video_covers = []
-    else:
-        real_video_covers = prepare_real_videos(
-            raw_dir=raw_dir,
-            image_paths=image_paths,
-            max_videos=num_sources,
-            target_size=target_size,
-            fps=fps,
-            duration=duration,
-            allow_synthetic=allow_synthetic
-        )
+    num_sources = max(1, num_samples // 2)
+    real_video_covers = prepare_real_videos(
+        raw_dir=raw_dir,
+        image_paths=image_paths,
+        max_videos=num_sources,
+        target_size=target_size,
+        fps=fps,
+        duration=duration,
+        allow_synthetic=allow_synthetic,
+        own_only=own_only
+    )
+
+    if real_video_covers and (own_only or len(real_video_covers) < num_sources):
+        num_sources = len(real_video_covers)
 
     logger.info(f"Generating video dataset from {len(real_video_covers) if real_video_covers else num_sources} sources...")
     H, W = target_size

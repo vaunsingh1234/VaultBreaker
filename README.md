@@ -1,11 +1,29 @@
 # 🛡️ VaultBreaker: Unified Multi-Modal Steganography Detection
 
-[![Tests](https://img.shields.io/badge/pytest-28%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-49%20passed-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](requirements.txt)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](Makefile)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.14-ee4c2c.svg)](https://pytorch.org/)
 
-**VaultBreaker** is a unified machine learning pipeline that detects hidden data (steganography) across **Images**, **Audio**, and **Video** files using format-specialized feature extractors and a shared classification framework.
+**VaultBreaker** is a unified machine learning pipeline that detects hidden data (steganography) across **Images**, **Audio**, and **Video** files using format-specialized feature extractors, rule-based structure integrity inspection, an authenticated steganography codec (VBK1 / AES-GCM), and an audited glassmorphic forensic console with zero unexplained numbers.
+
+---
+
+## 🖥️ Web Console (Glass UI)
+
+The forensic web console is structured into 6 dedicated pages:
+
+1. **Scan (Home)**: High-speed container inspection with drag-and-drop glass upload, dynamic alert threshold, honest Ground Truth verification strip, 3 forensic evidence tabs (*Why*, *Most unusual measurements*, *Raw JSON*), rule-based structural integrity checks, and a one-click "Try to reveal message" forensic bridge.
+2. **Hide Message**: Embed text or binary payloads into images (PNG), audio (16 kHz WAV), or video (FFV1 MKV) using VBK1 framing and scrypt + AES-256-GCM encryption. Includes real-time container capacity gauge, lossy re-encoding destruction warnings, instant self-verification, and a 50x amplified difference viewer for images.
+3. **Reveal Message**: 4-stage extraction cascade ((1) VaultBreaker VBK1, (2) EOF appended payloads & metadata, (3) Sequential LSB heuristics, (4) Steghide subprocess). Safe sandboxed display with HTML escaping, hex inspection for binary data, and clean password verification.
+4. **Data Explorer**: Dataset manifest browser with filter bar (Format, Split, Label, Method), lazy media previews, quick picks from the test partition, and an unbiased **Blind Test Mode** enabled by default.
+5. **Results**: Full performance breakdown loaded strictly from `docs/RESULTS/metrics.json`, per-method accuracy chart, ROC curves, confusion matrices, and transparent forensic limitations.
+6. **History**: Persistent scan audit log from `data/scan_history.db`, CSV export, and confirmed history clearing.
+
+```bash
+# Launch the forensic console
+streamlit run app/streamlit_app.py --server.port 8502
+```
 
 ---
 
@@ -18,12 +36,6 @@ make fast
 ```
 
 *(On Windows Command Prompt: `run.bat fast`, or Windows PowerShell: `.\run.ps1 -Target fast`)*
-
-To launch the forensic Web UI:
-```bash
-make app
-# Or: streamlit run app/streamlit_app.py
-```
 
 To launch the REST API:
 ```bash
@@ -121,12 +133,25 @@ pip install -r requirements.txt
 pip install -e . --no-deps
 ```
 
-### 2. Dataset Generation (~2 minutes)
-```bash
-# Full dataset (Real covers from Imagenette, ESC-50, and visual motion video):
-python scripts/make_dataset.py
+### 2. Put Your Files Here
+Drop your raw cover media files into the corresponding directories:
+- **Images**: `data/raw/images` (supports `.png`, `.jpg`, `.jpeg`, `.bmp` case-insensitively; auto-cropped and standardized to 256x256 grayscale PNG).
+- **Audio**: `data/raw/audio` (supports `.wav`, `.mp3`, `.flac`, `.m4a` case-insensitively; converted to 16 kHz mono 16-bit WAV with `imageio-ffmpeg`).
+- **Video**: `data/raw/video` (supports `.mp4`, `.avi`, `.mkv`, `.mov`, `.webm` case-insensitively; decoded, first 2.0 s, 128x128, 15 fps, saved as lossless FFV1 MKV).
 
-# Or fast demo dataset:
+Duplicates are automatically removed by SHA-256 hash, and unreadable or corrupt files are safely skipped with a logged warning.
+
+### 3. Dataset Generation Commands
+```bash
+# Ingest your own files and top up missing covers from Imagenette/ESC-50:
+make data
+
+# Ingest ONLY your own files (skip downloading public datasets):
+python scripts/make_dataset.py --own-only
+# or:
+make data ARGS="--own-only"
+
+# Fast demo mode with small target count:
 python scripts/make_dataset.py --fast
 ```
 

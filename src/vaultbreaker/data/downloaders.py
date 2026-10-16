@@ -5,6 +5,8 @@ import tarfile
 import zipfile
 import io
 import time
+import hashlib
+import subprocess
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 import numpy as np
@@ -12,6 +14,7 @@ import cv2
 import soundfile as sf
 import librosa
 import imageio.v3 as iio
+import imageio_ffmpeg
 import psutil
 
 from vaultbreaker.utils.logger import get_logger
@@ -28,12 +31,30 @@ ESC50_URLS = [
     "https://github.com/karolpiczak/ESC-50/archive/master.zip"
 ]
 
+# Global tracker for console table display
+INGESTION_STATS = {
+    "images": {"found": 0, "used": 0, "skipped": 0},
+    "audio": {"found": 0, "used": 0, "skipped": 0},
+    "video": {"found": 0, "used": 0, "skipped": 0}
+}
+
+
+def compute_file_sha256(filepath: Path) -> str:
+    """Compute SHA-256 hash of a file for deduplication."""
+    hasher = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def get_system_capacity() -> Dict[str, float]:
     """Returns available RAM (GB) and available disk space (GB)."""
     ram_gb = psutil.virtual_memory().total / (1024 ** 3)
     disk_stat = shutil.disk_usage(".")
     disk_free_gb = disk_stat.free / (1024 ** 3)
     return {"ram_gb": ram_gb, "disk_free_gb": disk_free_gb}
+
 
 def get_ram_aware_dataset_sizes(
     config_img: Optional[int] = None,
@@ -75,6 +96,7 @@ def get_ram_aware_dataset_sizes(
 
     return {"images": target_img, "audio": target_aud, "video": target_vid}
 
+
 def download_stream(urls: List[str], dest_file: Path, timeout: int = 300) -> bool:
     """Download file with progress logging and mirror failover."""
     dest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -90,7 +112,7 @@ def download_stream(urls: List[str], dest_file: Path, timeout: int = 300) -> boo
                 total_size = response.headers.get("Content-Length")
                 total_bytes = int(total_size) if total_size else 0
                 downloaded = 0
-                block_size = 1024 * 1024 # 1MB chunks
+                block_size = 1024 * 1024  # 1MB chunks
                 
                 start_time = time.time()
                 with open(dest_file, "wb") as f_out:
@@ -116,55 +138,333 @@ def download_stream(urls: List[str], dest_file: Path, timeout: int = 300) -> boo
 
     return False
 
+
+# --- USER RAW FILE PROCESSORS (Images, Audio, Video) ---
+
+def process_user_images(
+    raw_images_dir: Path,
+    target_size: Tuple[int, int] = (256, 256)
+) -> Tuple[List[Path], Dict[str, int]]:
+    """
+    Scans user-provided images in data/raw/images (png/jpg/jpeg/bmp, case-insensitive),
+    deduplicates by sha256, skips corrupt files with warning,
+    crops/resizes to target_size (grayscale), and writes to standardized path.
+    """
+    valid_exts = {".png", ".jpg", ".jpeg", ".bmp"}
+    raw_images_dir.mkdir(parents=True, exist_ok=True)
+    std_dir = raw_images_dir / ".standardized"
+    std_dir.mkdir(parents=True, exist_ok=True)
+
+    candidates = [
+        p for p in raw_images_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_img_")
+    ]
+    candidates.sort()
+
+    found = len(candidates)
+    used = 0
+    skipped = 0
+    seen_hashes = set()
+    processed_paths = []
+    H, W = target_size
+
+    for p in candidates:
+        try:
+            sha = compute_file_sha256(p)
+            if sha in seen_hashes:
+                logger.warning(f"Skipping duplicate image {p.name} (SHA-256 match)")
+                skipped += 1
+                continue
+            seen_hashes.add(sha)
+
+            img = cv2.imread(str(p), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                from PIL import Image
+                with Image.open(p) as pil_img:
+                    img = np.array(pil_img.convert("L"))
+
+            if img is None or img.size == 0:
+                logger.warning(f"Skipping unreadable or corrupt image: {p.name}")
+                skipped += 1
+                continue
+
+            h_orig, w_orig = img.shape
+            scale = max(H / h_orig, W / w_orig)
+            new_w, new_h = int(round(w_orig * scale)), int(round(h_orig * scale))
+            img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+            start_y = (new_h - H) // 2
+            start_x = (new_w - W) // 2
+            img_crop = img_resized[start_y : start_y + H, start_x : start_x + W]
+
+            out_p = std_dir / f"user_img_{used:04d}_{sha[:8]}.png"
+            cv2.imwrite(str(out_p), img_crop, [cv2.IMWRITE_PNG_COMPRESSION, 6])
+            processed_paths.append(out_p)
+            used += 1
+        except Exception as e:
+            logger.warning(f"Error processing image {p.name}: {e}. Skipping.")
+            skipped += 1
+
+    stats = {"found": found, "used": used, "skipped": skipped}
+    return processed_paths, stats
+
+
+def process_user_audio(
+    raw_audio_dir: Path,
+    target_sr: int = 16000,
+    duration: float = 3.0
+) -> Tuple[List[Path], Dict[str, int]]:
+    """
+    Scans user-provided audio in data/raw/audio (wav/mp3/flac/m4a, case-insensitive),
+    deduplicates by sha256, skips corrupt files with warning,
+    converts to 16 kHz mono 16-bit WAV (3.0s window with max energy) using imageio-ffmpeg.
+    """
+    valid_exts = {".wav", ".mp3", ".flac", ".m4a"}
+    raw_audio_dir.mkdir(parents=True, exist_ok=True)
+    std_dir = raw_audio_dir / ".standardized"
+    std_dir.mkdir(parents=True, exist_ok=True)
+
+    candidates = [
+        p for p in raw_audio_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_aud_")
+    ]
+    candidates.sort()
+
+    found = len(candidates)
+    used = 0
+    skipped = 0
+    seen_hashes = set()
+    processed_paths = []
+    target_samples = int(target_sr * duration)
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+
+    for p in candidates:
+        try:
+            sha = compute_file_sha256(p)
+            if sha in seen_hashes:
+                logger.warning(f"Skipping duplicate audio {p.name} (SHA-256 match)")
+                skipped += 1
+                continue
+            seen_hashes.add(sha)
+
+            # Convert to 16kHz mono WAV via imageio-ffmpeg
+            temp_wav = std_dir / f"_temp_{sha[:8]}.wav"
+            cmd = [
+                ffmpeg_exe, "-y", "-v", "error",
+                "-i", str(p),
+                "-vn", "-acodec", "pcm_s16le", "-ar", str(target_sr), "-ac", "1",
+                "-f", "wav", str(temp_wav)
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            if res.returncode != 0 or not temp_wav.exists():
+                logger.warning(f"Skipping unreadable or corrupt audio: {p.name} (ffmpeg decode failed)")
+                skipped += 1
+                if temp_wav.exists():
+                    temp_wav.unlink()
+                continue
+
+            data, sr = sf.read(str(temp_wav))
+            if temp_wav.exists():
+                temp_wav.unlink()
+
+            if data.ndim > 1:
+                data = np.mean(data, axis=1)
+
+            # Max energy window or circular pad
+            if len(data) >= target_samples:
+                hop = target_sr // 4
+                best_start = 0
+                best_energy = -1.0
+                for s in range(0, len(data) - target_samples + 1, hop):
+                    energy = float(np.sum(data[s : s + target_samples] ** 2))
+                    if energy > best_energy:
+                        best_energy = energy
+                        best_start = s
+                data = data[best_start : best_start + target_samples]
+            else:
+                pad_len = target_samples - len(data)
+                data = np.pad(data, (0, pad_len), mode="wrap")
+
+            if np.max(np.abs(data)) < 1e-3:
+                logger.warning(f"Skipping audio {p.name}: digital silence")
+                skipped += 1
+                continue
+
+            max_abs = np.max(np.abs(data)) + 1e-8
+            data = (data / max_abs) * 0.90
+            int_samples = (data * 32767.0).astype(np.int16)
+
+            out_p = std_dir / f"user_aud_{used:04d}_{sha[:8]}.wav"
+            sf.write(str(out_p), int_samples, target_sr, subtype="PCM_16", format="WAV")
+            processed_paths.append(out_p)
+            used += 1
+        except Exception as e:
+            logger.warning(f"Error processing audio {p.name}: {e}. Skipping.")
+            skipped += 1
+
+    stats = {"found": found, "used": used, "skipped": skipped}
+    return processed_paths, stats
+
+
+def process_user_videos(
+    raw_video_dir: Path,
+    target_size: Tuple[int, int] = (128, 128),
+    fps: int = 15,
+    duration: float = 2.0
+) -> Tuple[List[Path], Dict[str, int]]:
+    """
+    Scans user-provided videos in data/raw/video (mp4/avi/mkv/mov/webm, case-insensitive),
+    deduplicates by sha256, skips corrupt files with warning,
+    decodes first 2s at 15 fps (30 frames), resizes to 128x128,
+    and saves as lossless FFV1 MKV with pixelformat='rgb24'.
+    """
+    valid_exts = {".mp4", ".avi", ".mkv", ".mov", ".webm"}
+    raw_video_dir.mkdir(parents=True, exist_ok=True)
+    std_dir = raw_video_dir / ".standardized"
+    std_dir.mkdir(parents=True, exist_ok=True)
+
+    candidates = [
+        p for p in raw_video_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_vid_")
+    ]
+    candidates.sort()
+
+    found = len(candidates)
+    used = 0
+    skipped = 0
+    seen_hashes = set()
+    processed_paths = []
+    target_frames = int(fps * duration)
+    H, W = target_size
+
+    for p in candidates:
+        try:
+            sha = compute_file_sha256(p)
+            if sha in seen_hashes:
+                logger.warning(f"Skipping duplicate video {p.name} (SHA-256 match)")
+                skipped += 1
+                continue
+            seen_hashes.add(sha)
+
+            cap = cv2.VideoCapture(str(p))
+            if not cap.isOpened():
+                logger.warning(f"Skipping unreadable or corrupt video: {p.name}")
+                skipped += 1
+                continue
+
+            frames = []
+            while len(frames) < target_frames:
+                ret, frame_bgr = cap.read()
+                if not ret:
+                    break
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                frame_resized = cv2.resize(frame_rgb, (W, H), interpolation=cv2.INTER_AREA)
+                frames.append(frame_resized)
+            cap.release()
+
+            if not frames:
+                logger.warning(f"Skipping video {p.name}: zero frames decoded")
+                skipped += 1
+                continue
+
+            # Loop frames if video is shorter than target duration
+            orig_len = len(frames)
+            while len(frames) < target_frames:
+                frames.append(frames[len(frames) % orig_len])
+            frames = frames[:target_frames]
+
+            out_p = std_dir / f"user_vid_{used:04d}_{sha[:8]}.mkv"
+            iio.imwrite(
+                str(out_p),
+                np.stack(frames, axis=0),
+                extension=".mkv",
+                codec="ffv1",
+                fps=fps,
+                pixelformat="rgb24"
+            )
+            processed_paths.append(out_p)
+            used += 1
+        except Exception as e:
+            logger.warning(f"Error processing video {p.name}: {e}. Skipping.")
+            skipped += 1
+
+    stats = {"found": found, "used": used, "skipped": skipped}
+    return processed_paths, stats
+
+
+def print_ingestion_summary_table():
+    """Print clean ASCII summary table of user files found, used, and skipped."""
+    print("\n" + "=" * 62)
+    print("           VAULTBREAKER RAW DATA INGESTION SUMMARY")
+    print("=" * 62)
+    print(f"{'Format':<10} | {'Found':>7} | {'Used':>7} | {'Skipped':>9}")
+    print("-" * 11 + "+" + "-" * 9 + "+" + "-" * 9 + "+" + "-" * 11)
+    for fmt_name in ["images", "audio", "video"]:
+        s = INGESTION_STATS.get(fmt_name, {"found": 0, "used": 0, "skipped": 0})
+        label = fmt_name.capitalize()
+        print(f"{label:<10} | {s.get('found', 0):>7} | {s.get('used', 0):>7} | {s.get('skipped', 0):>9}")
+    print("=" * 62 + "\n")
+
+
+# --- PUBLIC DATASET DOWNLOAD & TOP-UP PIPELINES ---
+
 def prepare_real_images(
     raw_dir: Path,
     max_images: int = 2000,
     target_size: Tuple[int, int] = (256, 256),
-    allow_synthetic: bool = False
+    allow_synthetic: bool = False,
+    own_only: bool = False
 ) -> List[Path]:
     """
-    Downloads Imagenette2-160 (or checks existing images in raw_dir),
-    crops/resizes to 256x256 grayscale, and returns list of image file paths.
+    Ingests user images from data/raw/images first.
+    If own_only=True: uses only user images.
+    If own_only=False: tops up remaining covers from Imagenette2-160.
     """
     raw_images_dir = raw_dir / "images"
-    raw_images_dir.mkdir(parents=True, exist_ok=True)
+    user_paths, stats = process_user_images(raw_images_dir, target_size=target_size)
+    INGESTION_STATS["images"] = stats
 
-    # Check if already extracted and prepared
-    existing_files = sorted(list(raw_images_dir.glob("*.png")) + list(raw_images_dir.glob("*.jpg")) + list(raw_images_dir.glob("*.JPEG")))
-    if len(existing_files) >= max_images:
-        logger.info(f"Found {len(existing_files)} existing image covers in {raw_images_dir}. Reusing.")
-        return existing_files[:max_images]
+    if own_only:
+        logger.info(f"[--own-only] Using {len(user_paths)} user-provided image covers (Imagenette download disabled).")
+        return user_paths
 
-    logger.info(f"Downloading real image dataset (Imagenette2-160) to {raw_images_dir}...")
+    if len(user_paths) >= max_images:
+        logger.info(f"Using {max_images} user-provided image covers (out of {len(user_paths)} available).")
+        return user_paths[:max_images]
+
+    # Check for previously downloaded and prepared public covers
+    existing_covers = sorted([p for p in raw_images_dir.glob("cover_img_*.png") if p.is_file()])
+    needed = max_images - len(user_paths)
+
+    if len(existing_covers) >= needed:
+        logger.info(f"Reusing {needed} existing prepared covers + {len(user_paths)} user images.")
+        return user_paths + existing_covers[:needed]
+
+    logger.info(f"User provided {len(user_paths)} images. Downloading Imagenette to top up remaining {needed} covers...")
     temp_archive = raw_dir / "imagenette2-160.tgz"
     success = download_stream(IMAGENETTE_URLS, temp_archive)
 
     if not success:
-        if not allow_synthetic:
+        if not allow_synthetic and len(user_paths) == 0:
             err_msg = (
                 "CRITICAL: Failed to download real image dataset (Imagenette2-160) from mirrors, "
-                "and no user-provided images exist in data/raw/images. "
-                "VaultBreaker refuses to fall back to procedural synthetic covers without --allow-synthetic!"
+                "and no user-provided images exist in data/raw/images."
             )
             logger.error(err_msg)
             raise RuntimeError(err_msg)
+        elif len(user_paths) > 0:
+            logger.warning(f"Download failed; proceeding with {len(user_paths)} user images.")
+            return user_paths
         else:
-            logger.warning("Falling back to procedural synthetic images due to --allow-synthetic flag.")
             return []
 
-    # Extract directly and process to preserve disk space
-    logger.info("Extracting, grayscale-converting, and center-cropping images to 256x256...")
-    processed_paths = []
+    processed_topup = []
     H, W = target_size
-
     try:
         with tarfile.open(temp_archive, "r:gz") as tar:
             members = [m for m in tar.getmembers() if m.isfile() and m.name.lower().endswith(('.jpg', '.jpeg', '.png'))]
-            logger.info(f"Found {len(members)} raw images in archive. Processing first {max_images}...")
-            
             count = 0
             for m in members:
-                if count >= max_images:
+                if count >= needed:
                     break
                 f = tar.extractfile(m)
                 if f is None:
@@ -174,83 +474,80 @@ def prepare_real_images(
                 if img is None:
                     continue
 
-                # Center crop and resize to target_size
                 h_orig, w_orig = img.shape
-                # Scale so smaller dimension matches target
                 scale = max(H / h_orig, W / w_orig)
                 new_w, new_h = int(round(w_orig * scale)), int(round(h_orig * scale))
                 img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
-                
-                # Center crop
                 start_y = (new_h - H) // 2
                 start_x = (new_w - W) // 2
                 img_crop = img_resized[start_y : start_y + H, start_x : start_x + W]
 
                 out_path = raw_images_dir / f"cover_img_{count:04d}.png"
                 cv2.imwrite(str(out_path), img_crop, [cv2.IMWRITE_PNG_COMPRESSION, 6])
-                processed_paths.append(out_path)
+                processed_topup.append(out_path)
                 count += 1
-
-                if count % 250 == 0:
-                    logger.info(f"  Processed {count}/{max_images} image covers...")
-
     finally:
-        # Delete temporary .tgz immediately to conserve disk space
         if temp_archive.exists():
             temp_archive.unlink()
-            logger.info("Removed temporary archive imagenette2-160.tgz to conserve disk space.")
 
-    logger.info(f"Successfully prepared {len(processed_paths)} real cover images.")
-    return processed_paths
+    return user_paths + processed_topup
+
 
 def prepare_real_audio(
     raw_dir: Path,
     max_audio: int = 1000,
     target_sr: int = 16000,
     duration: float = 3.0,
-    allow_synthetic: bool = False
+    allow_synthetic: bool = False,
+    own_only: bool = False
 ) -> List[Path]:
     """
-    Downloads ESC-50 dataset (or checks existing audio in raw_dir),
-    converts to mono 16 kHz 16-bit WAV (3.0s clips), and returns file paths.
+    Ingests user audio from data/raw/audio first.
+    If own_only=True: uses only user audio.
+    If own_only=False: tops up remaining covers from ESC-50 dataset.
     """
     raw_audio_dir = raw_dir / "audio"
-    raw_audio_dir.mkdir(parents=True, exist_ok=True)
+    user_paths, stats = process_user_audio(raw_audio_dir, target_sr=target_sr, duration=duration)
+    INGESTION_STATS["audio"] = stats
 
-    existing_files = sorted(list(raw_audio_dir.glob("*.wav")))
-    if len(existing_files) >= max_audio:
-        logger.info(f"Found {len(existing_files)} existing audio covers in {raw_audio_dir}. Reusing.")
-        return existing_files[:max_audio]
+    if own_only:
+        logger.info(f"[--own-only] Using {len(user_paths)} user-provided audio covers (ESC-50 download disabled).")
+        return user_paths
 
-    logger.info(f"Downloading real audio dataset (ESC-50) to {raw_audio_dir}...")
+    if len(user_paths) >= max_audio:
+        logger.info(f"Using {max_audio} user-provided audio covers (out of {len(user_paths)} available).")
+        return user_paths[:max_audio]
+
+    existing_covers = sorted([p for p in raw_audio_dir.glob("cover_aud_*.wav") if p.is_file()])
+    needed = max_audio - len(user_paths)
+
+    if len(existing_covers) >= needed:
+        logger.info(f"Reusing {needed} existing prepared audio covers + {len(user_paths)} user audio.")
+        return user_paths + existing_covers[:needed]
+
+    logger.info(f"User provided {len(user_paths)} audio clips. Downloading ESC-50 to top up remaining {needed} covers...")
     temp_archive = raw_dir / "esc50.zip"
     success = download_stream(ESC50_URLS, temp_archive)
 
     if not success:
-        if not allow_synthetic:
-            err_msg = (
-                "CRITICAL: Failed to download real audio dataset (ESC-50) from mirrors, "
-                "and no user-provided audio files exist in data/raw/audio. "
-                "VaultBreaker refuses to fall back to procedural synthetic covers without --allow-synthetic!"
-            )
+        if not allow_synthetic and len(user_paths) == 0:
+            err_msg = "CRITICAL: Failed to download ESC-50 and no user audio exists in data/raw/audio."
             logger.error(err_msg)
             raise RuntimeError(err_msg)
+        elif len(user_paths) > 0:
+            logger.warning(f"Download failed; proceeding with {len(user_paths)} user audio.")
+            return user_paths
         else:
-            logger.warning("Falling back to procedural synthetic audio due to --allow-synthetic flag.")
             return []
 
-    logger.info("Extracting and standardizing audio clips to mono 16kHz 16-bit WAV (3.0s)...")
-    processed_paths = []
+    processed_topup = []
     target_samples = int(target_sr * duration)
-
     try:
         with zipfile.ZipFile(temp_archive, "r") as z:
             wav_members = [name for name in z.namelist() if name.lower().endswith(".wav") and not name.startswith("__MACOSX")]
-            logger.info(f"Found {len(wav_members)} audio clips in ESC-50. Processing up to {max_audio}...")
-
             count = 0
             for name in wav_members:
-                if count >= max_audio:
+                if count >= needed:
                     break
                 with z.open(name) as wav_file:
                     wav_bytes = io.BytesIO(wav_file.read())
@@ -259,15 +556,12 @@ def prepare_real_audio(
                     except Exception:
                         continue
 
-                    # Convert to mono if stereo
                     if data.ndim > 1:
                         data = np.mean(data, axis=1)
 
-                    # Resample to 16kHz
                     if orig_sr != target_sr:
                         data = librosa.resample(data.astype(np.float32), orig_sr=orig_sr, target_sr=target_sr)
 
-                    # Slice to exact duration: find window with maximum energy
                     if len(data) >= target_samples:
                         hop = target_sr // 4
                         best_start = 0
@@ -282,31 +576,23 @@ def prepare_real_audio(
                         pad_len = target_samples - len(data)
                         data = np.pad(data, (0, pad_len), mode="wrap")
 
-                    # Skip clips that are digital silence even in their maximum-energy window
                     if np.max(np.abs(data)) < 1e-3:
                         continue
 
-                    # Normalize amplitude and convert to 16-bit PCM
                     max_abs = np.max(np.abs(data)) + 1e-8
                     data = (data / max_abs) * 0.90
                     int_samples = (data * 32767.0).astype(np.int16)
 
                     out_path = raw_audio_dir / f"cover_aud_{count:04d}.wav"
                     sf.write(str(out_path), int_samples, target_sr, subtype="PCM_16", format="WAV")
-                    processed_paths.append(out_path)
+                    processed_topup.append(out_path)
                     count += 1
-
-                    if count % 200 == 0:
-                        logger.info(f"  Processed {count}/{max_audio} audio covers...")
-
     finally:
-        # Delete zip archive immediately
         if temp_archive.exists():
             temp_archive.unlink()
-            logger.info("Removed temporary archive esc50.zip to conserve disk space.")
 
-    logger.info(f"Successfully prepared {len(processed_paths)} real cover audio clips.")
-    return processed_paths
+    return user_paths + processed_topup
+
 
 def prepare_real_videos(
     raw_dir: Path,
@@ -315,46 +601,51 @@ def prepare_real_videos(
     target_size: Tuple[int, int] = (128, 128),
     fps: int = 15,
     duration: float = 2.0,
-    allow_synthetic: bool = False
+    allow_synthetic: bool = False,
+    own_only: bool = False
 ) -> List[Path]:
     """
-    Checks for user-provided .mp4/.avi/.mkv in data/raw/video.
-    If none exist, creates realistic videos by smooth pan/zoom subwindow motion
-    across REAL images (from Imagenette). Never uses procedural noise.
-    Saved as lossless FFV1 MKV.
+    Ingests user videos from data/raw/video first.
+    If own_only=True: uses only user videos.
+    If own_only=False: tops up remaining covers by pan/zoom across image covers.
     """
     raw_video_dir = raw_dir / "video"
-    raw_video_dir.mkdir(parents=True, exist_ok=True)
+    user_paths, stats = process_user_videos(raw_video_dir, target_size=target_size, fps=fps, duration=duration)
+    INGESTION_STATS["video"] = stats
 
-    existing_files = sorted(
-        list(raw_video_dir.glob("*.mkv")) +
-        list(raw_video_dir.glob("*.mp4")) +
-        list(raw_video_dir.glob("*.avi"))
-    )
-    if len(existing_files) >= max_videos:
-        logger.info(f"Found {len(existing_files)} existing video covers in {raw_video_dir}. Reusing.")
-        return existing_files[:max_videos]
+    if own_only:
+        logger.info(f"[--own-only] Using {len(user_paths)} user-provided video covers.")
+        return user_paths
+
+    if len(user_paths) >= max_videos:
+        logger.info(f"Using {max_videos} user-provided video covers (out of {len(user_paths)} available).")
+        return user_paths[:max_videos]
+
+    existing_covers = sorted([p for p in raw_video_dir.glob("cover_vid_*.mkv") if p.is_file()])
+    needed = max_videos - len(user_paths)
+
+    if len(existing_covers) >= needed:
+        logger.info(f"Reusing {needed} existing prepared video covers + {len(user_paths)} user videos.")
+        return user_paths + existing_covers[:needed]
 
     if not image_paths:
-        if not allow_synthetic:
+        if not allow_synthetic and len(user_paths) == 0:
             err_msg = "Cannot generate realistic pan/zoom video: no real images available and --allow-synthetic not passed."
             logger.error(err_msg)
             raise RuntimeError(err_msg)
-        return []
+        return user_paths
 
-    logger.info(f"Synthesizing {max_videos} realistic pan/zoom videos from real images in lossless FFV1 MKV...")
-    processed_paths = []
+    logger.info(f"User provided {len(user_paths)} videos. Synthesizing remaining {needed} pan/zoom videos from real images...")
+    processed_topup = []
     n_frames = int(fps * duration)
     H, W = target_size
 
-    for idx in range(max_videos):
-        # Pick a base real image
+    for idx in range(needed):
         img_p = image_paths[idx % len(image_paths)]
-        base_img = cv2.imread(str(img_p), cv2.IMREAD_COLOR) # BGR
+        base_img = cv2.imread(str(img_p), cv2.IMREAD_COLOR)
         if base_img is None:
             base_img = np.zeros((H * 2, W * 2, 3), dtype=np.uint8)
 
-        # Upscale canvas to 2x target size for ample pan/zoom space
         canvas_h, canvas_w = H * 2, W * 2
         canvas = cv2.resize(base_img, (canvas_w, canvas_h), interpolation=cv2.INTER_CUBIC)
 
@@ -383,12 +674,9 @@ def prepare_real_videos(
             np.stack(frames, axis=0),
             extension=".mkv",
             codec="ffv1",
-            fps=fps
+            fps=fps,
+            pixelformat="rgb24"
         )
-        processed_paths.append(out_path)
+        processed_topup.append(out_path)
 
-        if (idx + 1) % 50 == 0:
-            logger.info(f"  Generated {idx + 1}/{max_videos} video covers...")
-
-    logger.info(f"Successfully generated {len(processed_paths)} realistic video covers.")
-    return processed_paths
+    return user_paths + processed_topup

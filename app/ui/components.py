@@ -1,431 +1,201 @@
-"""Reusable UI Component Library for VaultBreaker (CyFocus Design System)."""
+"""Reusable Glass UI Component Library for VaultBreaker.
+
+Provides clean glassmorphism components with zero fallback numbers and strictly
+audited provenance across all presentation surfaces.
+"""
 
 import html
+from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
-import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
 from .icons import get_svg_icon
 
 # --- COLOR PALETTE TOKENS ---
 ACCENT_ORANGE = "#E5522B"
 ACCENT_ORANGE_HOVER = "#F0643C"
-ACCENT_ORANGE_BG = "rgba(229, 82, 43, 0.2)"
+ACCENT_ORANGE_BG = "rgba(229, 82, 43, 0.15)"
 STATUS_CLEAN = "#3FB67A"
-STATUS_SUSPICIOUS = "#E0B341"
-STATUS_HIGH = "#E5522B"
-STATUS_GREY = "#6E6E6E"
-TEXT_MUTED = "#8B8B8B"
+STATUS_AMBER = "#E0B341"
+STATUS_STEGO = "#E5522B"
 TEXT_PRIMARY = "#EDEDED"
+TEXT_SECONDARY = "#A0A0A0"
+TEXT_MUTED = "#707070"
 
-def status_marker(status_or_verdict: str) -> str:
-    """Return colored square dot marker HTML."""
-    s = str(status_or_verdict).lower()
-    if "critical" in s or "high" in s or "stego" in s or "confirmed" in s:
-        color = STATUS_HIGH
-    elif "suspect" in s or "medium" in s or "triage" in s or "analyzing" in s:
-        color = STATUS_SUSPICIOUS
-    elif "clean" in s or "low" in s or "resolved" in s or "benign" in s:
-        color = STATUS_CLEAN
-    else:
-        color = STATUS_GREY
-    return f'<span class="severity-marker" style="background-color: {color};"></span>'
 
-def status_badge_html(status: str) -> str:
-    """Return styled status chip with marker and label."""
-    s = str(status).lower()
-    if "critical" in s or "high" in s or "stego" in s or "confirmed" in s:
-        color = STATUS_HIGH
-        cls = "badge-status-high"
-    elif "suspect" in s or "medium" in s or "triage" in s or "analyzing" in s:
-        color = STATUS_SUSPICIOUS
-        cls = "badge-status-suspicious"
-    elif "clean" in s or "low" in s or "resolved" in s:
-        color = STATUS_CLEAN
-        cls = "badge-status-clean"
-    else:
-        color = STATUS_GREY
-        cls = "badge-media"
-    marker = f'<span class="severity-marker" style="background-color: {color};"></span>'
-    return f'<span class="badge-status {cls}">{marker}{html.escape(status)}</span>'
-
-def risk_badge_html(risk: str) -> str:
-    """Return styled risk bracket badge with matching colors."""
-    r = str(risk).lower()
-    if "critical" in r or "high" in r or "stego" in r:
-        color = STATUS_HIGH
-        cls = "badge-status-high"
-    elif "medium" in r or "suspect" in r:
-        color = STATUS_SUSPICIOUS
-        cls = "badge-status-suspicious"
-    else:
-        color = STATUS_CLEAN
-        cls = "badge-status-clean"
-    marker = f'<span class="severity-marker" style="background-color: {color};"></span>'
-    return f'<span class="badge-status {cls}">{marker}{html.escape(risk)}</span>'
-
-def score_pill_html(prob: float) -> str:
-    """Return calibrated probability percentage badge."""
-    score_val = f"{prob * 100:.1f}%"
-    if prob >= 0.6272:
-        cls = "score-high"
-    elif prob >= 0.40:
-        cls = "score-suspicious"
-    else:
-        cls = "score-clean"
-    return f'<span class="score-pill {cls}">{score_val}</span>'
-
-def breadcrumb_html(items: List[Tuple[str, Optional[str]]]) -> str:
-    """
-    Renders top navigation breadcrumb.
-    items: list of (label, url_or_none)
-    """
-    parts = []
-    for i, (label, link) in enumerate(items):
-        is_last = (i == len(items) - 1)
-        if is_last:
-            parts.append(f'<span class="crumb-active">{html.escape(label)}</span>')
-        else:
-            parts.append(f'<span class="crumb-item">{html.escape(label)}</span>')
-    sep = ' <span class="crumb-sep">/</span> '
-    return f'<div class="cy-breadcrumb">{sep.join(parts)}</div>'
-
-def stat_card_html(title: str, value: str, subtext: str = "", delta: Optional[str] = None, delta_type: str = "good", icon_name: str = "activity") -> str:
-    """Renders CyFocus stat card."""
-    delta_html = ""
-    if delta:
-        delta_cls = "delta-good" if delta_type == "good" else "delta-bad"
-        delta_html = f'<span class="{delta_cls}">{html.escape(delta)}</span> '
-
-    icon_svg = get_svg_icon(icon_name, size=16, color="#8B8B8B")
-
+def glass_card(content_html: str, title: Optional[str] = None, subtitle: Optional[str] = None) -> str:
+    """Renders a standard glassmorphic card container."""
+    header_html = ""
+    if title:
+        sub_html = f'<div style="font-size:12px; color:var(--text-muted); margin-top:2px;">{html.escape(subtitle)}</div>' if subtitle else ""
+        header_html = f'''
+        <div style="margin-bottom: 14px; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px;">
+            <div style="font-size:15px; font-weight:600; color:var(--text-primary);">{html.escape(title)}</div>
+            {sub_html}
+        </div>
+        '''
     return f'''
-    <div class="stat-card">
+    <div class="glass-card">
+        {header_html}
+        {content_html}
+    </div>
+    '''
+
+
+def stat_card(title: str, value: str, subtext: str = "", help_text: Optional[str] = None, icon_name: str = "activity") -> str:
+    """Renders a glass stat card with title, large value, and help tooltip."""
+    icon_svg = get_svg_icon(icon_name, size=18, color=TEXT_SECONDARY)
+    title_attr = f'title="{html.escape(help_text)}"' if help_text else ""
+    return f'''
+    <div class="stat-card" {title_attr}>
         <div class="stat-header">
             <span class="stat-title">{html.escape(title)}</span>
             {icon_svg}
         </div>
         <div class="stat-value">{html.escape(value)}</div>
-        <div class="stat-subtext">
-            {delta_html}<span>{html.escape(subtext)}</span>
-        </div>
+        <div class="stat-subtext">{html.escape(subtext)}</div>
     </div>
     '''
 
-def kanban_card_html(scan: Dict[str, Any], is_selected: bool = False) -> str:
-    """Renders interactive Kanban finding card."""
-    scan_id = scan.get("scan_id", "SCN-0000")
-    filename = scan.get("filename", "unknown_file")
-    prob = float(scan.get("probability", 0.0))
-    fmt = scan.get("format", "bin").upper()
-    created_at = scan.get("created_at", "")[:10]
-    initials = "".join([part[0].upper() for part in filename.split("_")[:2]]) or "VB"
 
-    border_style = 'border-color: var(--accent-orange);' if is_selected else ''
-
+def verdict_badge(is_stego: bool, text: Optional[str] = None, is_unsupported: bool = False) -> str:
+    """Renders a styled verdict chip (clean, stego, or unsupported)."""
+    if is_unsupported or (text and "unsupported" in text.lower()):
+        lbl = text or "Unsupported Format"
+        return f'''
+        <div class="verdict-badge" style="background: rgba(140, 140, 140, 0.15); color: #B0B0B0; border: 1px solid rgba(140, 140, 140, 0.3);">
+            <span class="verdict-dot" style="background: #A0A0A0; box-shadow: 0 0 8px rgba(160, 160, 160, 0.4);"></span>
+            <span>{html.escape(lbl)}</span>
+        </div>
+        '''
+    if is_stego:
+        lbl = text or "Suspected hidden data"
+        return f'''
+        <div class="verdict-badge verdict-stego">
+            <span class="verdict-dot dot-stego"></span>
+            <span>{html.escape(lbl)}</span>
+        </div>
+        '''
+    lbl = text or "No hidden data detected"
     return f'''
-    <div class="kanban-card" style="{border_style}">
-        <div class="card-top">
-            <span class="card-id">{scan_id}</span>
-            {score_pill_html(prob)}
+    <div class="verdict-badge verdict-clean">
+        <span class="verdict-dot dot-clean"></span>
+        <span>{html.escape(lbl)}</span>
+    </div>
+    '''
+
+
+def prob_gauge(prob: float, threshold: float = 0.5) -> str:
+    """Renders a horizontal glass probability gauge with alert threshold marker."""
+    pct = max(0.0, min(100.0, prob * 100.0))
+    t_pct = max(0.0, min(100.0, threshold * 100.0))
+    bar_color = STATUS_STEGO if prob >= threshold else STATUS_CLEAN
+    
+    return f'''
+    <div style="margin: 8px 0 14px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
+            <span style="font-size:12px; color:var(--text-secondary);">Calibrated Stego Score</span>
+            <span style="font-size:16px; font-weight:600; font-family:'JetBrains Mono'; color:{bar_color};">{pct:.1f}%</span>
         </div>
-        <div class="card-file" title="{html.escape(filename)}">{html.escape(filename)}</div>
-        <div class="card-footer">
-            <span class="badge-media">{fmt}</span>
-            <div style="display:flex; align-items:center; gap:6px;">
-                <span class="card-date">{created_at}</span>
-                <span class="card-avatar">{initials}</span>
-            </div>
+        <div class="gauge-container" title="Alert threshold at {t_pct:.1f}%">
+            <div class="gauge-threshold-line" style="left: {t_pct}%;"></div>
+            <div class="gauge-fill" style="width: {pct}%; background-color: {bar_color};"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted);">
+            <span>0% (Clean)</span>
+            <span style="color:var(--status-amber);">Alert threshold: {t_pct:.1f}%</span>
+            <span>100% (Payload)</span>
         </div>
     </div>
     '''
 
-# --- PLOTLY CYBERSECURITY CHARTS ---
 
-def create_radar_chart(report: Dict[str, Any]) -> go.Figure:
-    """
-    Detection Surface Map Radar Chart:
-    Feature groups: LSB Statistics, SRM Residuals, SPAM Markov, Spectral, Temporal, DCT.
-    Overlays: Observed vs. Expected (Clean Baseline) in warm orange tones.
-    """
-    categories = [
-        "LSB Statistics",
-        "SRM Residuals",
-        "SPAM Markov",
-        "Spectral Energy",
-        "Temporal Flicker",
-        "DCT Blockiness"
-    ]
-
-    prob = float(report.get("calibrated_probability", 0.1))
-    top_feats = report.get("top_features", [])
-
-    # Derive observed values from report features
-    observed_scores = [0.15, 0.18, 0.20, 0.14, 0.16, 0.15]
-    for feat_name, dev in top_feats:
-        fn = feat_name.lower()
-        dev_norm = min(1.0, max(0.1, abs(dev) / 4.0))
-        if "lsb" in fn or "chi" in fn:
-            observed_scores[0] = max(observed_scores[0], dev_norm)
-        elif "srm" in fn or "kv" in fn or "laplacian" in fn:
-            observed_scores[1] = max(observed_scores[1], dev_norm)
-        elif "spam" in fn or "transition" in fn:
-            observed_scores[2] = max(observed_scores[2], dev_norm)
-        elif "spectral" in fn or "mfcc" in fn or "stft" in fn or "lpc" in fn:
-            observed_scores[3] = max(observed_scores[3], dev_norm)
-        elif "temporal" in fn or "flicker" in fn or "frame" in fn or "variance" in fn:
-            observed_scores[4] = max(observed_scores[4], dev_norm)
-        elif "dct" in fn:
-            observed_scores[5] = max(observed_scores[5], dev_norm)
-
-    # Scale by overall stego probability
-    if prob > 0.5:
-        observed_scores = [min(1.0, s * (0.8 + 0.6 * prob)) for s in observed_scores]
-
-    # Baseline (clean expected) is flat nominal ~0.20
-    expected_scores = [0.20, 0.18, 0.22, 0.19, 0.18, 0.20]
-
-    # Close loops for radar
-    categories_closed = categories + [categories[0]]
-    observed_closed = observed_scores + [observed_scores[0]]
-    expected_closed = expected_scores + [expected_scores[0]]
-
-    fig = go.Figure()
-
-    # Clean Expected Baseline
-    fig.add_trace(go.Scatterpolar(
-        r=expected_closed,
-        theta=categories_closed,
-        fill='toself',
-        fillcolor='rgba(255, 255, 255, 0.04)',
-        line=dict(color='rgba(255, 255, 255, 0.25)', width=1, dash='dot'),
-        name='Expected Clean Baseline'
-    ))
-
-    # Observed Sample Profile
-    fill_color = 'rgba(229, 82, 43, 0.35)' if prob >= 0.5 else 'rgba(63, 182, 122, 0.25)'
-    line_color = ACCENT_ORANGE if prob >= 0.5 else STATUS_CLEAN
-
-    fig.add_trace(go.Scatterpolar(
-        r=observed_closed,
-        theta=categories_closed,
-        fill='toself',
-        fillcolor=fill_color,
-        line=dict(color=line_color, width=2.5),
-        name='Observed Incident Surface'
-    ))
-
-    fig.update_layout(
-        polar=dict(
-            bgcolor='rgba(0,0,0,0)',
-            radialaxis=dict(
-                visible=True,
-                range=[0, 1.0],
-                showticklabels=False,
-                linecolor='rgba(255, 255, 255, 0.08)',
-                gridcolor='rgba(255, 255, 255, 0.06)'
-            ),
-            angularaxis=dict(
-                linecolor='rgba(255, 255, 255, 0.08)',
-                gridcolor='rgba(255, 255, 255, 0.06)',
-                tickfont=dict(size=12, color='#EDEDED', family='Inter')
-            )
-        ),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=50, r=50, t=30, b=30),
-        height=400,
-        showlegend=True,
-        legend=dict(
-            orientation='h',
-            yanchor='bottom',
-            y=-0.18,
-            xanchor='center',
-            x=0.5,
-            font=dict(size=11, color='#8B8B8B')
-        )
-    )
-    return fig
-
-def create_radial_chart(report: Dict[str, Any]) -> go.Figure:
-    """
-    Proper Polar Bar Chart of Per-Method Stego Likelihoods.
-    Rendered with distinct bar widths and legible typography without clipping.
-    """
-    methods = [
-        "LSB Replacement",
-        "LSB Matching",
-        "Edge Adaptive",
-        "DCT AC Coeffs",
-        "Frame LSB",
-        "Echo Hiding"
-    ]
-
-    prob = float(report.get("calibrated_probability", 0.05))
-    top_feats = report.get("top_features", [])
+def ground_truth_strip(
+    real_label: int,
+    method: str,
+    payload_rate: float,
+    pred_stego: bool
+) -> str:
+    """Renders Ground Truth verification strip showing honest model correctness."""
+    actual_stego = (real_label == 1)
+    is_correct = (pred_stego == actual_stego)
     
-    # Synthetic method likelihood weights derived from top indicators
-    scores = [0.1, 0.1, 0.1, 0.1, 0.1, 0.05]
-    if prob >= 0.5:
-        for fn, dev in top_feats:
-            f = fn.lower()
-            if "dct" in f:
-                scores[3] += 0.65
-            elif "lsb" in f and "trans" in f:
-                scores[1] += 0.55
-            elif "chi" in f or "pairs" in f:
-                scores[0] += 0.60
-            elif "srm" in f or "spam" in f:
-                scores[2] += 0.50
-            elif "flicker" in f or "frame" in f:
-                scores[4] += 0.70
-            elif "echo" in f or "autocorr" in f:
-                scores[5] += 0.40
+    strip_cls = "gt-correct" if is_correct else "gt-wrong"
+    verdict_text = "CORRECT VERDICT" if is_correct else "INCORRECT VERDICT"
+    verdict_color = STATUS_CLEAN if is_correct else STATUS_AMBER
+    
+    label_desc = "Hidden data present" if actual_stego else "Clean verified media"
+    method_desc = method.replace("_", " ").title() if method != "clean" else "Baseline Clean"
+    payload_str = f"{payload_rate:.2f} bpp / rate" if payload_rate > 0 else "None (0.0)"
+    
+    return f'''
+    <div class="ground-truth-strip {strip_cls}">
+        <div>
+            <div class="gt-label">Ground Truth Verification</div>
+            <div class="gt-value" style="color:{verdict_color};">{verdict_text}</div>
+        </div>
+        <div>
+            <div class="gt-label">Actual Condition</div>
+            <div class="gt-value">{label_desc}</div>
+        </div>
+        <div>
+            <div class="gt-label">Hiding Algorithm</div>
+            <div class="gt-value">{html.escape(method_desc)}</div>
+        </div>
+        <div>
+            <div class="gt-label">Payload Injection Rate</div>
+            <div class="gt-value">{payload_str}</div>
+        </div>
+    </div>
+    '''
 
-    total = sum(scores)
-    # Convert to percentage [0..100]
-    pct_scores = [round(min(100.0, (s / max(0.01, total)) * (30.0 + 70.0 * prob)), 1) for s in scores]
 
-    fig = go.Figure(go.Barpolar(
-        r=pct_scores,
-        theta=methods,
-        width=[48] * len(methods),
-        marker=dict(
-            color=pct_scores,
-            colorscale=[[0, '#2A1810'], [0.4, '#8F3419'], [1.0, '#E5522B']],
-            cmin=0,
-            cmax=100,
-            line=dict(color='#E5522B', width=1.5)
-        ),
-        opacity=0.9
-    ))
+def score_pill_html(prob: float, threshold: Optional[float] = None) -> str:
+    """Return calibrated probability percentage badge for tables and cards."""
+    score_val = f"{prob * 100:.1f}%"
+    t = threshold if threshold is not None else 0.5
+    if prob >= t:
+        color = STATUS_STEGO
+        bg = "rgba(229, 82, 43, 0.15)"
+        cls = "score-high"
+    else:
+        color = STATUS_CLEAN
+        bg = "rgba(63, 182, 122, 0.15)"
+        cls = "score-clean"
+    return f'<span class="score-pill {cls}" style="padding: 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; font-family: \'JetBrains Mono\'; color: {color}; background: {bg}; border: 1px solid {color}40;">{score_val}</span>'
 
-    fig.update_layout(
-        polar=dict(
-            bgcolor='rgba(0,0,0,0)',
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                showticklabels=True,
-                ticksuffix='%',
-                tickfont=dict(size=10, color='#8B8B8B', family='JetBrains Mono'),
-                gridcolor='rgba(255, 255, 255, 0.06)'
-            ),
-            angularaxis=dict(
-                gridcolor='rgba(255, 255, 255, 0.06)',
-                tickfont=dict(size=12, color='#EDEDED', family='Inter')
-            )
-        ),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=60, r=60, t=30, b=30),
-        height=400,
-        showlegend=False
-    )
-    return fig
 
-def create_media_donut_chart(scans: List[Dict[str, Any]]) -> go.Figure:
-    """Donut chart showing breakdown by media type (image, audio, video)."""
-    counts = {"Image": 0, "Audio": 0, "Video": 0}
-    for s in scans:
-        m = str(s.get("media_type", "image")).capitalize()
-        if m in counts:
-            counts[m] += 1
-        else:
-            counts["Image"] += 1
+def file_preview(media_type: str, file_path: Optional[str] = None, thumb_path: Optional[str] = None) -> str:
+    """Renders thumbnail preview box or media icon placeholder."""
+    icon_name = "image" if media_type == "image" else "music" if media_type == "audio" else "video"
+    icon_svg = get_svg_icon(icon_name, size=28, color=TEXT_SECONDARY)
+    
+    if thumb_path and Path(thumb_path).exists():
+        # Encode or link thumbnail
+        return f'<div class="thumb-box"><img src="{thumb_path}" class="thumb-img" alt="Preview"/></div>'
+    
+    return f'<div class="thumb-box">{icon_svg}</div>'
 
-    labels = list(counts.keys())
-    values = list(counts.values())
 
-    fig = go.Figure(go.Pie(
-        labels=labels,
-        values=values,
-        hole=0.68,
-        marker=dict(
-            colors=['#E5522B', '#E0B341', '#3FB67A'],
-            line=dict(color='#1B1B1B', width=2)
-        ),
-        textinfo='label+percent',
-        textfont=dict(size=11, color='#EDEDED', family='Inter'),
-        hoverinfo='label+value'
-    ))
+def empty_state(title: str, subtext: str, button_label: Optional[str] = None, icon_name: str = "search") -> str:
+    """Renders a friendly glass empty state container."""
+    icon_svg = get_svg_icon(icon_name, size=32, color=TEXT_SECONDARY)
+    btn_html = f'<div style="margin-top: 14px;"><span class="badge-media">{html.escape(button_label)}</span></div>' if button_label else ""
+    return f'''
+    <div class="empty-state-box">
+        {icon_svg}
+        <div class="empty-title">{html.escape(title)}</div>
+        <div class="empty-subtext">{html.escape(subtext)}</div>
+        {btn_html}
+    </div>
+    '''
 
-    fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        height=240,
-        margin=dict(l=10, r=10, t=10, b=10),
-        showlegend=False,
-        annotations=[dict(
-            text=f"<b>{sum(values)}</b><br><span style='font-size:10px; color:#8B8B8B;'>SCANS</span>",
-            x=0.5, y=0.5,
-            font=dict(size=18, color='#EDEDED', family='JetBrains Mono'),
-            showarrow=False
-        )]
-    )
-    return fig
-
-def create_activity_trend_chart(scans: List[Dict[str, Any]]) -> go.Figure:
-    """Bar/line trend chart of recent scans."""
-    if not scans:
-        fig = go.Figure()
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', height=240)
-        return fig
-
-    # Group by scan ID order or timestamps
-    sample_scans = scans[:12][::-1]
-    ids = [s.get("scan_id", f"S-{i}") for i, s in enumerate(sample_scans)]
-    probs = [float(s.get("probability", 0.0)) for s in sample_scans]
-    colors = [STATUS_HIGH if p >= 0.5 else STATUS_CLEAN for p in probs]
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=ids,
-        y=probs,
-        marker=dict(
-            color=colors,
-            opacity=0.85,
-            line=dict(color='rgba(255, 255, 255, 0.1)', width=1)
-        ),
-        name="Calibrated Stego Score"
-    ))
-
-    # Add 0.5 threshold line
-    fig.add_hline(
-        y=0.6389,
-        line_dash="dot",
-        line_color="#E0B341",
-        annotation_text="Decision Threshold (0.639)",
-        annotation_font=dict(size=10, color="#E0B341"),
-        annotation_position="bottom right"
-    )
-
-    fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#8B8B8B', family='Inter'),
-        yaxis=dict(
-            range=[0, 1.05],
-            gridcolor='rgba(255, 255, 255, 0.05)',
-            zerolinecolor='rgba(255, 255, 255, 0.05)',
-            tickfont=dict(size=10)
-        ),
-        xaxis=dict(
-            gridcolor='rgba(255, 255, 255, 0.05)',
-            tickfont=dict(size=10)
-        ),
-        margin=dict(l=25, r=15, t=15, b=25),
-        height=240,
-        showlegend=False
-    )
-    return fig
 
 def render_entities_table(top_features: List[Tuple[str, float]]) -> str:
-    """Renders CyFocus entities-style table of top contributory indicators."""
+    """Renders table of top forensic measurements furthest from normal."""
     rows = []
     for rank, (name, dev) in enumerate(top_features, 1):
         dev_val = f"{dev:+.4f} σ"
-        dev_color = STATUS_HIGH if dev > 0 else STATUS_CLEAN
+        dev_color = STATUS_STEGO if dev > 0 else STATUS_CLEAN
         
         # Categorize domain
         fn = name.lower()
@@ -450,21 +220,21 @@ def render_entities_table(top_features: List[Tuple[str, float]]) -> str:
         <tr>
             <td style="font-family:'JetBrains Mono'; color:#8B8B8B;">#{rank:02d}</td>
             <td style="font-weight:600; color:#EDEDED;">{html.escape(name)}</td>
-            <td><span class="badge-media">{domain}</span></td>
+            <td><span style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,0.06); color:#A0A0A0;">{domain}</span></td>
             <td style="font-family:'JetBrains Mono'; color:{dev_color}; font-weight:600;">{dev_val}</td>
             <td style="color:#B5B5B5; font-size:12px;">{impact}</td>
         </tr>
         ''')
 
     return f'''
-    <table class="cy-table">
+    <table class="glass-table">
         <thead>
             <tr>
-                <th style="width:40px;">Rank</th>
-                <th>Forensic Indicator</th>
+                <th style="width:50px;">Rank</th>
+                <th>Measurement</th>
                 <th>Domain</th>
-                <th>Deviation (σ)</th>
-                <th>Risk Impact</th>
+                <th>Furthest from Normal (Deviations σ)</th>
+                <th>Forensic Impact</th>
             </tr>
         </thead>
         <tbody>
@@ -472,3 +242,106 @@ def render_entities_table(top_features: List[Tuple[str, float]]) -> str:
         </tbody>
     </table>
     '''
+
+
+def render_format_card(title: str, badge: str, m_dict: Optional[Dict[str, Any]], help_auc: str, help_acc: str) -> str:
+    """Renders real benchmark card or 'Not available yet' empty state without numeric fallbacks."""
+    if m_dict and "roc_auc" in m_dict and "accuracy" in m_dict and "unique_sources" in m_dict:
+        auc_str = f"{m_dict['roc_auc']:.4f}"
+        acc_str = f"{m_dict['accuracy'] * 100:.1f}%"
+        src_str = f"{m_dict['unique_sources']} distinct source files"
+        body = (
+            f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin: 8px 0 2px 0;">'
+            f'<div title="{html.escape(help_auc)}"><div class="stat-value">{auc_str}</div><div style="font-size:11px; color:#8B8B8B;">Area under ROC curve</div></div>'
+            f'<div style="text-align:right;" title="{html.escape(help_acc)}"><div style="font-size:18px; font-weight:600; font-family:\'JetBrains Mono\'; color:#EDEDED;">{acc_str}</div><div style="font-size:11px; color:#8B8B8B;">Overall Accuracy</div></div>'
+            f'</div>'
+            f'<div style="font-size: 11px; color: #8B8B8B; margin-top: 6px;" title="Independent media sources in evaluation partition">{src_str}</div>'
+        )
+    else:
+        body = (
+            '<div style="margin: 14px 0 8px 0;">'
+            '<div style="font-size: 14px; font-weight: 600; color: #E0B341;">Not available yet</div>'
+            '<div style="font-size: 11px; color: #8B8B8B; margin-top: 4px;">Run make eval to compute test metrics</div>'
+            '</div>'
+        )
+
+    return (
+        f'<div class="stat-card">'
+        f'<div class="stat-header"><span class="stat-title">{html.escape(title)}</span>'
+        f'<span style="font-size:10px; font-weight:600; padding:2px 8px; border-radius:9999px; background:rgba(229,82,43,0.15); color:#E5522B; border:1px solid rgba(229,82,43,0.3);">{html.escape(badge)}</span></div>'
+        f'{body}'
+        f'</div>'
+    )
+
+
+def load_real_metrics(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Load test evaluation metrics from docs/RESULTS/metrics.json. Returns None if missing or invalid."""
+    import json
+    m_path = results_path if results_path else (Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS" / "metrics.json")
+    if m_path.exists():
+        try:
+            with open(m_path, "r") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and data:
+                    return data
+        except Exception:
+            pass
+    return None
+
+
+def create_activity_trend_chart(scans: List[Dict[str, Any]], threshold: Optional[float] = None) -> go.Figure:
+    """Bar trend chart of recent scans using actual calibrated threshold."""
+    if not scans:
+        fig = go.Figure()
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', height=220)
+        return fig
+
+    t = threshold if threshold is not None else 0.5
+    sample_scans = scans[:12][::-1]
+    ids = [s.get("scan_id") or "" for s in sample_scans]
+    probs = []
+    for s in sample_scans:
+        val = s.get("probability")
+        probs.append(float(val) if val is not None else 0.0)
+    colors = [STATUS_STEGO if p >= t else STATUS_CLEAN for p in probs]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=ids,
+        y=probs,
+        marker=dict(
+            color=colors,
+            opacity=0.9,
+            line=dict(color='rgba(255, 255, 255, 0.1)', width=1)
+        ),
+        name="Calibrated Stego Score"
+    ))
+
+    fig.add_hline(
+        y=t,
+        line_dash="dot",
+        line_color="#E0B341",
+        annotation_text=f"Alert threshold ({t:.1%})",
+        annotation_font=dict(size=10, color="#E0B341"),
+        annotation_position="bottom right"
+    )
+
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#8B8B8B', family='Inter'),
+        yaxis=dict(
+            range=[0, 1.05],
+            gridcolor='rgba(255, 255, 255, 0.05)',
+            zerolinecolor='rgba(255, 255, 255, 0.05)',
+            tickfont=dict(size=10)
+        ),
+        xaxis=dict(
+            gridcolor='rgba(255, 255, 255, 0.05)',
+            tickfont=dict(size=10)
+        ),
+        margin=dict(l=25, r=15, t=15, b=25),
+        height=220,
+        showlegend=False
+    )
+    return fig

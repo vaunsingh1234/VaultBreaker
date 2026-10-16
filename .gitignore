@@ -56,6 +56,8 @@ data/features/
 data/cache/
 data/generated/
 data/raw/
+data/.thumb_cache/
+data/.test_media/
 data/scan_history.db
 models_saved/test_xgb.joblib
 

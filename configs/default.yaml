@@ -73,3 +73,63 @@ training:
   weight_decay: 0.0001
   early_stopping_patience: 6
   scheduler: "cosine"
+
+# Deep learning models and profiles configuration
+deep_models:
+  shared_latent_dim: 128
+  srnet:
+    srm_filters: 30
+    base_channels: 32
+    unpooled_blocks: 7
+    pooled_blocks: 4
+    latent_dim: 128
+    dropout: 0.1
+  audio_1d:
+    in_channels: 1
+    base_channels: 32
+    num_diff_filters: 8
+    num_blocks: 4
+    latent_dim: 128
+    dropout: 0.1
+  video_temporal:
+    sample_frames: 8
+    attention_heads: 4
+    latent_dim: 128
+    dropout: 0.1
+  fusion:
+    use_handcrafted: true
+    latent_dim: 128
+    dropout: 0.2
+
+profiles:
+  smoke:
+    image_covers: 500
+    audio_windows: 300
+    video_clips: 50
+    epochs: 2
+    batch_size: 16
+    learning_rate: 0.001
+    weight_decay: 0.0001
+  laptop:
+    image_covers: 20000
+    audio_windows: 8000
+    video_clips: 1500
+    epochs: 8
+    batch_size: 16
+    learning_rate: 0.0005
+    weight_decay: 0.0001
+  gpu:
+    image_covers: 20000
+    audio_windows: 8000
+    video_clips: 1500
+    epochs: 30
+    batch_size: 32
+    learning_rate: 0.0005
+    weight_decay: 0.0001
+
+aletheia:
+  enabled: false
+
+curriculum:
+  high_payload_epochs: 2
+  high_payload_min_rate: 0.30

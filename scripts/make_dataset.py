@@ -11,7 +11,10 @@ import sys
 from vaultbreaker.utils.config import load_config
 from vaultbreaker.utils.logger import get_logger
 from vaultbreaker.utils.seed import seed_everything
-from vaultbreaker.data.downloaders import get_ram_aware_dataset_sizes
+from vaultbreaker.data.downloaders import (
+    get_ram_aware_dataset_sizes,
+    print_ingestion_summary_table
+)
 from vaultbreaker.data.generator import (
     generate_image_dataset,
     generate_audio_dataset,
@@ -27,6 +30,7 @@ def main():
     parser.add_argument("--config", type=str, default="configs/default.yaml", help="Path to config file")
     parser.add_argument("--fast", action="store_true", help="Generate tiny dataset for fast demonstration / testing")
     parser.add_argument("--allow-synthetic", action="store_true", help="Allow fallback to procedural synthetic data if download fails")
+    parser.add_argument("--own-only", action="store_true", help="Use only user-provided files in data/raw/ without downloading public benchmarks")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -70,13 +74,14 @@ def main():
         payload_rates=img_cfg.get("payload_rates", [0.10, 0.20, 0.30, 0.50]),
         methods=img_cfg.get("methods", ["lsb_replacement", "lsb_matching", "edge_adaptive", "dct_ac"]),
         allow_synthetic=args.allow_synthetic,
+        own_only=args.own_only,
         seed=seed
     )
     all_records.extend(img_records)
 
     # Collect prepared image cover paths for realistic video pan/zoom
     raw_images_dir = raw_dir / "images"
-    real_img_paths = sorted(list(raw_images_dir.glob("*.png")) + list(raw_images_dir.glob("*.jpg")))
+    real_img_paths = sorted(list(raw_images_dir.glob("*.png")) + list(raw_images_dir.glob("*.jpg")) + list((raw_images_dir / ".standardized").glob("*.png")))
 
     # 2. Audio Dataset
     logger.info(">>> STEP 2: GENERATING AUDIO DATASET (ESC-50 real covers) <<<")
@@ -89,6 +94,7 @@ def main():
         payload_rates=aud_cfg.get("payload_rates", [0.20, 0.40, 0.70, 1.00]),
         methods=aud_cfg.get("methods", ["lsb_replacement", "lsb_matching", "echo_hiding"]),
         allow_synthetic=args.allow_synthetic,
+        own_only=args.own_only,
         seed=seed
     )
     all_records.extend(aud_records)
@@ -106,9 +112,13 @@ def main():
         payload_rates=vid_cfg.get("payload_rates", [0.10, 0.20, 0.40]),
         methods=vid_cfg.get("methods", ["frame_lsb", "frame_lsb_matching"]),
         allow_synthetic=args.allow_synthetic,
+        own_only=args.own_only,
         seed=seed
     )
     all_records.extend(vid_records)
+
+    # Display Ingestion Summary Table
+    print_ingestion_summary_table()
 
     logger.info(f"Total media files generated: {len(all_records)} (Images: {len(img_records)}, Audio: {len(aud_records)}, Video: {len(vid_records)})")
 

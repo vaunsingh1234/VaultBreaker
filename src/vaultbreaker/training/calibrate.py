@@ -81,7 +81,7 @@ class TemperatureScalingCalibrator:
         """
         Produce human-interpretable verdict, risk level, and metadata details.
         """
-        verdict = "SUSPECTED STEGO" if prob >= self.decision_threshold else "CLEAN"
+        verdict = "SUSPECTED STEGO" if prob >= self.decision_threshold else "No hidden data detected"
 
         if prob < self.risk_thresholds["clean_max"]:
             risk = "BENIGN / CLEAN"

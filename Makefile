@@ -7,7 +7,7 @@ setup:
 	$(PYTHON) -m pip install -e . --no-deps
 
 data:
-	$(PYTHON) scripts/make_dataset.py
+	$(PYTHON) scripts/make_dataset.py $(ARGS)
 
 features:
 	$(PYTHON) scripts/extract_features.py --num-workers 4
