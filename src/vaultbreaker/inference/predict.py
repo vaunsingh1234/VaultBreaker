@@ -131,6 +131,11 @@ class VaultBreakerPredictor:
         # Default fallback calibrator
         self.default_calibrator = self.calibrators.get("image", TemperatureScalingCalibrator(target_fpr=0.05))
 
+    @property
+    def calibrator(self):
+        """Backwards compatibility accessor for default calibrator."""
+        return self.default_calibrator
+
     def predict_file(
         self,
         filepath: Union[str, Path],

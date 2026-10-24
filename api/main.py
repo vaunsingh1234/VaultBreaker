@@ -41,7 +41,8 @@ def health() -> Dict[str, Any]:
         "version": "1.0.0",
         "supported_media": ["image (PNG, JPEG)", "audio (WAV, FLAC)", "video (MKV, AVI, MP4)"],
         "device": str(predictor.device) if predictor else "unknown",
-        "calibrated_threshold": float(predictor.calibrator.decision_threshold) if predictor else 0.5
+        "calibrated_threshold": float(predictor.default_calibrator.decision_threshold) if predictor else 0.5,
+        "calibrated_thresholds": {k: float(v.decision_threshold) for k, v in predictor.calibrators.items()} if predictor else {}
     }
 
 @app.post("/scan", summary="Scan Media File for Hidden Payloads")
