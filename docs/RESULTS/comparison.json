@@ -1,13 +1,25 @@
 {
+  "profile": "laptop",
+  "epochs": 5,
+  "device": "mps",
+  "training_sample_counts": {
+    "image": 1395,
+    "audio": 706,
+    "video": 244,
+    "total": 2345
+  },
+  "seed": 42,
+  "git_commit": "ad6d316d63844a9363987ee3eb8e0ff859f0110d",
+  "timestamp": "2026-10-24 11:06:30",
   "is_smoke": false,
   "test_manifest": "data/splits/manifest_test.csv",
   "comparison": {
     "image": {
       "deep_model": {
-        "roc_auc": 0.9754,
-        "accuracy": 0.5,
-        "pe": 0.0883,
-        "recall_at_5pct_fpr": 0.85
+        "roc_auc": 0.9966,
+        "accuracy": 0.97,
+        "pe": 0.0133,
+        "recall_at_5pct_fpr": 0.9933
       },
       "handcrafted_mlp": {
         "roc_auc": 0.9309,
@@ -24,10 +36,10 @@
     },
     "audio": {
       "deep_model": {
-        "roc_auc": 0.4991,
+        "roc_auc": 0.4997,
         "accuracy": 0.5,
         "pe": 0.493,
-        "recall_at_5pct_fpr": 0.0559
+        "recall_at_5pct_fpr": 0.049
       },
       "handcrafted_mlp": {
         "roc_auc": 0.6205,
@@ -44,10 +56,10 @@
     },
     "video": {
       "deep_model": {
-        "roc_auc": 0.5674,
-        "accuracy": 0.55,
-        "pe": 0.425,
-        "recall_at_5pct_fpr": 0.1333
+        "roc_auc": 0.5715,
+        "accuracy": 0.5583,
+        "pe": 0.4167,
+        "recall_at_5pct_fpr": 0.1667
       },
       "handcrafted_mlp": {
         "roc_auc": 0.9311,

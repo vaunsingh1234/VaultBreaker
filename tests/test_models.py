@@ -143,3 +143,37 @@ def test_video_shared_frame_backbone():
     net = VaultBreakerDeepNet(base_channels=16)
     assert net.video_deep.frame_backbone is net.image_deep
 
+
+def test_audio_deep_can_learn_overfit():
+    """Prove audio deep model can learn: overfit a tiny batch where loss drops towards 0 (Item 3)."""
+    from vaultbreaker.models.deep_net import VaultBreakerDeepNet
+    torch.manual_seed(42)
+    np.random.seed(42)
+    net = VaultBreakerDeepNet(base_channels=16, latent_dim=128, dropout=0.0)
+    net.train()
+
+    # Raw 16-bit PCM waveform inputs
+    x = torch.randn(2, 1, 48000) * 1000.0
+    y = torch.tensor([[0.0], [1.0]])
+
+    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+    crit = torch.nn.BCEWithLogitsLoss()
+
+    initial_loss = None
+    final_loss = None
+    for step in range(50):
+        opt.zero_grad()
+        logits, _, _ = net(x, "audio")
+        loss = crit(logits, y)
+        loss.backward()
+        opt.step()
+        if step == 0:
+            initial_loss = loss.item()
+        if step == 49:
+            final_loss = loss.item()
+
+    assert initial_loss is not None and final_loss is not None
+    assert final_loss < 0.20, f"Expected final loss < 0.20, got {final_loss:.4f}"
+    assert final_loss < initial_loss * 0.35, f"Expected loss to drop significantly from {initial_loss:.4f} to {final_loss:.4f}"
+
+

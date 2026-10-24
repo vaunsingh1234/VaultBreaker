@@ -134,17 +134,16 @@ class Audio1DBackbone(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        x: (B, 1, N) or (B, N) raw 16-bit audio waveform in [-32768, 32767] or float [-1, 1].
+        x: (B, 1, N) or (B, N) raw 16-bit audio waveform in [-32768, 32767].
+        Feeds raw 16-bit integer values directly to frozen difference filters
+        so least significant bit perturbations are not normalized away.
         """
         if x.dim() == 2:
             x = x.unsqueeze(1)
 
-        # Scale strictly by 1/32768 if in integer range
-        if x.abs().max() > 1.5:
-            x = x.float() / 32768.0
-
-        # Layer 1: Difference residuals
-        diff_feat = self.diff_layer(x)
+        # Feed raw 16-bit float samples directly into discrete difference filters
+        x_raw = x.float()
+        diff_feat = self.diff_layer(x_raw)
 
         # Convolutions
         h = self.in_proj(diff_feat)

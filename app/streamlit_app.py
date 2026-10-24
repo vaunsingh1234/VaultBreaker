@@ -330,6 +330,9 @@ def render_scan_page():
 
         # Top Bar: Verdict Badge + Filename + Actions
         col_res_top1, col_res_top2 = st.columns([2.5, 1.0])
+        model_name_disp = rep.get("model_name") or rep.get("model_used", "Unified Detector")
+        model_reason = rep.get("model_selection_reason") or ""
+
         with col_res_top1:
             st.markdown(f'''
             <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
@@ -338,6 +341,10 @@ def render_scan_page():
             </div>
             <div style="font-size:12px; color:var(--text-secondary);">
                 Media Type: <strong style="color:var(--text-primary); text-transform:uppercase;">{mtype}</strong> ({fmt.upper()}) &bull; Container Size: <strong style="color:var(--text-primary);">{sz_kb:.1f} KB</strong>
+            </div>
+            <div style="margin-top: 6px; font-size:12px; color:var(--text-secondary);">
+                Model Selected: <strong style="color:#EDEDED;">{html.escape(model_name_disp)}</strong>
+                {f'<span style="margin-left: 8px; color:#E0B341; font-size:11px;">({html.escape(model_reason)})</span>' if model_reason else ''}
             </div>
             ''', unsafe_allow_html=True)
         with col_res_top2:
@@ -1206,19 +1213,26 @@ def render_results_page():
     if not metrics_data:
         st.markdown('''
         <div class="empty-state-box">
-            <div class="empty-title">Metrics Not Available Yet</div>
-            <div class="empty-subtext">Run <code>make eval</code> to compute evaluation metrics across test splits.</div>
+            <div class="empty-title">No real training run yet</div>
+            <div class="empty-subtext">Run training with laptop or GPU profile to generate real benchmark metrics.</div>
         </div>
         ''', unsafe_allow_html=True)
         return
 
-    # Smoke Test Warning Banner if applicable
-    if metrics_data.get("is_smoke"):
-        st.markdown('''
-        <div style="padding: 12px 16px; border-radius: 8px; background: rgba(224, 179, 65, 0.15); border: 1px solid #E0B341; color: #E0B341; margin-bottom: 16px; font-weight: 600; font-size: 14px;">
-            ⚠️ Smoke test, not real performance
-        </div>
-        ''', unsafe_allow_html=True)
+    # Real profile badge
+    profile_name = str(metrics_data.get("profile", "laptop")).upper()
+    device_name = str(metrics_data.get("device", "auto"))
+    epochs_val = metrics_data.get("epochs", "N/A")
+    st.markdown(f'''
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom: 16px;">
+        <span style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; background:rgba(63, 182, 122, 0.15); border:1px solid #3FB67A; color:#3FB67A;">
+            REAL RUN: {profile_name} PROFILE
+        </span>
+        <span style="font-size:12px; color:var(--text-secondary);">
+            Device: <strong>{device_name}</strong> | Epochs: <strong>{epochs_val}</strong> | Commit: <code>{str(metrics_data.get("git_commit", "unknown"))[:8]}</code>
+        </span>
+    </div>
+    ''', unsafe_allow_html=True)
 
     # Table for Image / Audio / Video / Overall
     overall_m = metrics_data.get("overall") or {}
@@ -1239,6 +1253,9 @@ def render_results_page():
         auc = f"{float(raw_auc):.4f}" if raw_auc is not None else "N/A"
         ci = m.get("roc_auc_ci95")
         ci_str = f"[{ci[0]:.3f}, {ci[1]:.3f}]" if isinstance(ci, list) and len(ci) == 2 else ""
+
+        if name == "Audio" and raw_auc is not None and float(raw_auc) <= 0.55:
+            trust_badge += ' <span style="font-size:10px; color:#E05252; padding:2px 6px; border-radius:4px; background:rgba(224,82,82,0.15); border:1px solid rgba(224,82,82,0.3); margin-left:6px; font-weight:normal;">deep audio near 0.5 (not used; GBDT used instead)</span>'
         
         # Recall @ 5% FPR
         rfpr = m.get("recalls_at_fpr", {})

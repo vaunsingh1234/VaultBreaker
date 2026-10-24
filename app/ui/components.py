@@ -283,30 +283,32 @@ def render_format_card(title: str, badge: str, m_dict: Optional[Dict[str, Any]],
 
 def load_real_metrics(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """Load test evaluation metrics from docs/RESULTS/metrics_deep.json, metrics_handcrafted.json, or metrics.json.
-    Returns None if missing or invalid.
+    Strictly rejects any smoke runs, smoke profiles, or files in smoke directories.
+    Returns None if missing, smoke, or invalid.
     """
     import json
     results_dir = Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS"
-    candidates = []
     if results_path:
-        candidates.append(results_path)
+        candidates = [Path(results_path)]
     else:
         candidates = [
             results_dir / "metrics_deep.json",
             results_dir / "metrics.json",
             results_dir / "metrics_handcrafted.json",
-            results_dir / "smoke" / "metrics_deep.json",
-            results_dir / "smoke" / "metrics.json",
         ]
 
     for p in candidates:
         if p.exists():
+            # Never load files from a smoke directory
+            if "smoke" in p.parts:
+                continue
             try:
                 with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict) and data:
-                        if "smoke" in str(p) or data.get("is_smoke"):
-                            data["is_smoke"] = True
+                        # Reject if marked as smoke or smoke profile
+                        if data.get("is_smoke") is True or str(data.get("profile", "")).lower() == "smoke":
+                            continue
                         return data
             except Exception:
                 continue
@@ -314,18 +316,20 @@ def load_real_metrics(results_path: Optional[Path] = None) -> Optional[Dict[str,
 
 
 def load_comparison_results(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Load side-by-side comparison results from docs/RESULTS/comparison.json."""
+    """Load side-by-side comparison results from docs/RESULTS/comparison.json.
+    Strictly rejects any smoke run comparison file.
+    """
     import json
-    c_path = results_path if results_path else (Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS" / "comparison.json")
-    if not c_path.exists():
-        smoke_c_path = Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS" / "smoke" / "comparison.json"
-        if smoke_c_path.exists():
-            c_path = smoke_c_path
+    c_path = Path(results_path) if results_path else (Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS" / "comparison.json")
     if c_path.exists():
+        if "smoke" in c_path.parts:
+            return None
         try:
             with open(c_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict) and data:
+                    if data.get("is_smoke") is True or str(data.get("profile", "")).lower() == "smoke":
+                        return None
                     return data
         except Exception:
             pass

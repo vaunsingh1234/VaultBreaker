@@ -108,6 +108,28 @@ class TemperatureScalingCalibrator:
         logger.info(f"Saved calibrator to {filepath}")
 
     @classmethod
-    def load(cls, filepath: Union[str, Path]) -> "TemperatureScalingCalibrator":
+    def load(cls, filepath: Union[str, Path]) -> Any:
         """Load calibrator from disk."""
         return joblib.load(str(filepath))
+
+
+def load_format_calibrators(filepath: Union[str, Path]) -> Dict[str, TemperatureScalingCalibrator]:
+    """Load per-format calibrators dictionary. If a single calibrator is found, map it to all formats."""
+    p = Path(filepath)
+    if not p.exists():
+        return {
+            fmt: TemperatureScalingCalibrator(target_fpr=0.05)
+            for fmt in ["image", "audio", "video"]
+        }
+    try:
+        obj = joblib.load(str(p))
+        if isinstance(obj, dict):
+            return obj
+        elif isinstance(obj, TemperatureScalingCalibrator):
+            return {"image": obj, "audio": obj, "video": obj}
+    except Exception as e:
+        logger.warning(f"Failed to load calibrators from {p}: {e}")
+    return {
+        fmt: TemperatureScalingCalibrator(target_fpr=0.05)
+        for fmt in ["image", "audio", "video"]
+    }

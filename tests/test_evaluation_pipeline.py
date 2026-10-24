@@ -127,3 +127,91 @@ def test_no_hardcoded_metrics_in_evaluate_script():
 def test_check_ui_numbers_zero_violations():
     """Verify check_ui_numbers passes with zero violations across all app and scripts."""
     assert check_ui_main() == 0
+
+
+def test_smoke_file_rejected_by_app(tmp_path):
+    """Verify app components strictly reject files with is_smoke=True or profile='smoke' (Item 1)."""
+    from app.ui.components import load_real_metrics, load_comparison_results
+
+    # 1. Create a results dir with an is_smoke=True file
+    smoke_results = tmp_path / "smoke_results"
+    smoke_results.mkdir()
+    smoke_file = smoke_results / "metrics_deep.json"
+    smoke_file.write_text(json.dumps({
+        "profile": "smoke",
+        "is_smoke": True,
+        "epochs": 2,
+        "roc_auc": 0.52
+    }), encoding="utf-8")
+
+    # load_real_metrics with smoke_file must return None
+    assert load_real_metrics(results_path=smoke_file) is None
+
+    # 2. Check comparison.json with is_smoke=True is rejected
+    comp_file = smoke_results / "comparison.json"
+    comp_file.write_text(json.dumps({
+        "profile": "smoke",
+        "is_smoke": True,
+        "image": {"deep_model": {"roc_auc": 0.50}}
+    }), encoding="utf-8")
+    assert load_comparison_results(results_path=comp_file) is None
+
+    # 3. Create a real results file
+    real_results = tmp_path / "real_results"
+    real_results.mkdir()
+    real_file = real_results / "metrics_deep.json"
+    real_file.write_text(json.dumps({
+        "profile": "laptop",
+        "is_smoke": False,
+        "epochs": 8,
+        "roc_auc": 0.94
+    }), encoding="utf-8")
+    loaded = load_real_metrics(results_path=real_file)
+    assert loaded is not None
+    assert loaded["profile"] == "laptop"
+    assert loaded["is_smoke"] is False
+
+
+def test_threshold_calibration_fpr_and_recall():
+    """Verify calibrated threshold targets ~5% FPR and matches recall_at_5pct_fpr (Item 2)."""
+    from vaultbreaker.training.calibrate import TemperatureScalingCalibrator
+    from scripts.evaluate import compute_recall_at_fpr
+    from sklearn.metrics import recall_score
+
+    np.random.seed(42)
+    # Generate synthetic validation logits:
+    # clean (label 0) ~ N(-1.5, 1.0)
+    # stego (label 1) ~ N(+1.5, 1.0)
+    n_val = 500
+    val_clean_logits = np.random.normal(-1.5, 1.0, size=n_val)
+    val_stego_logits = np.random.normal(1.5, 1.0, size=n_val)
+    val_logits = np.concatenate([val_clean_logits, val_stego_logits])
+    val_labels = np.array([0] * n_val + [1] * n_val)
+
+    # Calibrate on validation set targeting 5% FPR
+    calibrator = TemperatureScalingCalibrator(target_fpr=0.05)
+    calibrator.fit(val_logits, val_labels)
+    threshold = calibrator.decision_threshold
+
+    # Generate held-out test logits with identical distribution
+    n_test = 1000
+    test_clean_logits = np.random.normal(-1.5, 1.0, size=n_test)
+    test_stego_logits = np.random.normal(1.5, 1.0, size=n_test)
+    test_logits = np.concatenate([test_clean_logits, test_stego_logits])
+    test_labels = np.array([0] * n_test + [1] * n_test)
+
+    # Apply calibration to test set
+    test_probs = np.array([calibrator.calibrate_prob(1.0 / (1.0 + np.exp(-lg))) for lg in test_logits])
+    test_preds = (test_probs >= threshold).astype(int)
+
+    # Verify test FPR is close to 5% (between 2% and 8%)
+    test_clean_preds = test_preds[test_labels == 0]
+    test_fpr = float(np.mean(test_clean_preds == 1))
+    assert abs(test_fpr - 0.05) <= 0.03, f"Test FPR {test_fpr:.4f} not close to 0.05"
+
+    # Verify recall at calibrated threshold matches recall_at_5pct_fpr
+    recalls_dict = compute_recall_at_fpr(test_labels, test_probs)
+    r5 = recalls_dict["recall_at_5pct_fpr"]
+    actual_recall = float(recall_score(test_labels, test_preds))
+    assert abs(actual_recall - r5) <= 0.05, f"Recall at calibrated threshold ({actual_recall:.4f}) does not match recall_at_5pct_fpr ({r5:.4f})"
+

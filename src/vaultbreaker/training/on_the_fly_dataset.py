@@ -232,9 +232,9 @@ class OnTheFlyPairedStegoDataset(Dataset):
 
             clean_samples, stego_samples = self._augment_audio(clean_samples, stego_samples)
 
-            # Scale strictly by 1/32768.0 without loudness normalization
-            clean_tensor = torch.from_numpy(clean_samples.astype(np.float32) / 32768.0).unsqueeze(0) # (1, 48000)
-            stego_tensor = torch.from_numpy(stego_samples.astype(np.float32) / 32768.0).unsqueeze(0) # (1, 48000)
+            # Feed raw 16-bit audio samples directly to preserve sample-level LSB fidelity
+            clean_tensor = torch.from_numpy(clean_samples.astype(np.float32)).unsqueeze(0) # (1, 48000)
+            stego_tensor = torch.from_numpy(stego_samples.astype(np.float32)).unsqueeze(0) # (1, 48000)
 
             m_idx = METHOD_TO_IDX.get(method, 1)
 

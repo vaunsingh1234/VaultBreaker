@@ -1,0 +1,40 @@
+{
+  "selection_metric": "validation_roc_auc",
+  "evaluated_on": "manifest_val.csv (strictly validation set, test data never used)",
+  "timestamp": "2026-10-24 11:16:43",
+  "formats": {
+    "image": {
+      "selected_model": "deep_model",
+      "model_name": "Deep Model (SRNet/Audio1D/VideoTemporal)",
+      "validation_roc_auc": 0.9998,
+      "reason": "Best validation ROC-AUC (0.9998) vs handcrafted_mlp: 0.9573, gradient_boosting: 0.9779",
+      "candidates": {
+        "deep_model": 0.9998,
+        "handcrafted_mlp": 0.9573,
+        "gradient_boosting": 0.9779
+      }
+    },
+    "audio": {
+      "selected_model": "gradient_boosting",
+      "model_name": "Gradient Boosting (GBDT)",
+      "validation_roc_auc": 0.8201,
+      "reason": "Best validation ROC-AUC (0.8201) vs deep_model: 0.5003, handcrafted_mlp: 0.6540",
+      "candidates": {
+        "deep_model": 0.5003,
+        "handcrafted_mlp": 0.654,
+        "gradient_boosting": 0.8201
+      }
+    },
+    "video": {
+      "selected_model": "gradient_boosting",
+      "model_name": "Gradient Boosting (GBDT)",
+      "validation_roc_auc": 0.9962,
+      "reason": "Best validation ROC-AUC (0.9962) vs deep_model: 0.6314, handcrafted_mlp: 0.9877",
+      "candidates": {
+        "deep_model": 0.6314,
+        "handcrafted_mlp": 0.9877,
+        "gradient_boosting": 0.9962
+      }
+    }
+  }
+}

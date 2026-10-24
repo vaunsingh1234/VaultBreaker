@@ -85,31 +85,69 @@ files.download('docs/RESULTS/metrics.json')
 
 ---
 
-## 4. Step-by-Step Instructions: Kaggle Notebooks
+## 4. Step-by-Step Instructions: Kaggle Notebooks (GPU Accelerator)
 
-1. Create a new notebook on [Kaggle](https://www.kaggle.com).
-2. Under **Notebook settings** (right panel):
-   - Set **Accelerator** to **GPU T4 x 2** or **GPU P100**.
-   - Set **Internet** to **On**.
-3. Execute the following in cell 1:
+You can either upload `notebooks/kaggle_train.ipynb` directly to Kaggle, or create a new notebook and run these exact steps.
+
+### Step 1: Create Notebook & Configure Hardware
+1. Go to [Kaggle Notebooks](https://www.kaggle.com/code) and click **New Notebook**.
+2. In the right-hand panel under **Notebook settings**:
+   - **Accelerator**: Select **GPU T4 x 2** or **GPU P100**.
+   - **Internet**: Toggle to **On** (required for cloning and dataset downloads).
+
+### Step 2: Run Training Cells Sequentially
+
+**Cell 1: Clone Repository & Install Dependencies**
 ```bash
 !git clone https://github.com/vaunsingh1234/VaultBreaker.git
 %cd VaultBreaker
+!pip install --upgrade pip
 !pip install -r requirements.txt
 !pip install -e .
+import torch
+print(f"CUDA Available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"Device: {torch.cuda.get_device_name(0)}")
 ```
-4. Execute dataset generation and training in cell 2:
+
+**Cell 2: Deterministically Generate GPU Dataset**
 ```bash
-# Deterministic generation
 !python scripts/make_dataset.py --profile gpu --seed 42
+```
 
-# Train model
+**Cell 3: Launch Full Deep Model Training on GPU**
+```bash
 !python scripts/train_deep.py --profile gpu --device cuda --seed 42
+```
 
-# Full test evaluation
+**Cell 4: Evaluate Test Set & Select Best Models on Validation**
+```bash
 !python scripts/evaluate.py --device cuda
 ```
-5. Check output files in `/kaggle/working/VaultBreaker/models_saved/` and download `deep_model.pt`.
+
+**Cell 5: Package Checkpoints and Results for Local Download**
+```python
+!tar -czvf vaultbreaker_gpu_results.tar.gz docs/RESULTS models_saved
+from IPython.display import FileLink
+FileLink("vaultbreaker_gpu_results.tar.gz")
+```
+
+### Step 3: Import GPU Results into Local VaultBreaker Repository
+Once `vaultbreaker_gpu_results.tar.gz` is downloaded to your local machine:
+1. Move `vaultbreaker_gpu_results.tar.gz` to your local repository root.
+2. Extract the archive (this will overwrite `docs/RESULTS/` and `models_saved/` with genuine GPU artifacts):
+   ```bash
+   tar -xzvf vaultbreaker_gpu_results.tar.gz -C .
+   ```
+3. Run `evaluate.py` to regenerate `comparison.json`, `metrics_deep.json`, `metrics_handcrafted.json`, and UI tables from the downloaded GPU checkpoint:
+   ```bash
+   python scripts/evaluate.py --device auto
+   ```
+4. Start or refresh the Streamlit app:
+   ```bash
+   streamlit run app/streamlit_app.py
+   ```
+   The UI will immediately display the real GPU profile badge, ROC-AUC, threshold calibrations, and per-format models.
 
 ---
 

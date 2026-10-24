@@ -108,7 +108,7 @@ profiles:
     video_clips: 12
     epochs: 2
     batch_size: 16
-    learning_rate: 0.001
+    learning_rate: 0.0003
     weight_decay: 0.0001
   laptop:
     image_covers: 20000
@@ -116,7 +116,7 @@ profiles:
     video_clips: 1500
     epochs: 8
     batch_size: 16
-    learning_rate: 0.0005
+    learning_rate: 0.0003
     weight_decay: 0.0001
   gpu:
     image_covers: 20000
@@ -124,7 +124,7 @@ profiles:
     video_clips: 1500
     epochs: 30
     batch_size: 32
-    learning_rate: 0.0005
+    learning_rate: 0.0002
     weight_decay: 0.0001
 
 aletheia:

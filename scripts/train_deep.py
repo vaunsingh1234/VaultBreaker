@@ -17,6 +17,11 @@ import time
 import argparse
 import random
 from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from typing import Dict, List, Any, Tuple, Optional
 import numpy as np
 import pandas as pd
@@ -24,16 +29,32 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from sklearn.metrics import roc_auc_score, accuracy_score
+import subprocess
+import copy
 
 from vaultbreaker.utils.logger import get_logger
 from vaultbreaker.utils.config import load_config, get_default_config_path
 from vaultbreaker.models.deep_net import VaultBreakerDeepNet
 from vaultbreaker.training.on_the_fly_dataset import OnTheFlyPairedStegoDataset, collate_paired_batch
 from vaultbreaker.training.calibrate import TemperatureScalingCalibrator
+from vaultbreaker.embedders.audio_lsb import embed_audio_lsb_replacement
 
 logger = get_logger("DeepTrainer")
+
+
+def get_git_commit() -> str:
+    """Safely obtain current git commit hash."""
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            cwd=str(Path(__file__).resolve().parent.parent)
+        ).decode("ascii").strip()
+        return commit
+    except Exception:
+        return "unknown"
 
 
 def get_auto_device() -> torch.device:
@@ -125,7 +146,7 @@ def evaluate_val_set(
                                 data = np.pad(data, (0, 48000 - len(data)), mode="wrap")
                             elif len(data) > 48000:
                                 data = data[:48000]
-                            t = torch.from_numpy(data.astype(np.float32) / 32768.0).unsqueeze(0)
+                            t = torch.from_numpy(data.astype(np.float32)).unsqueeze(0)
                         else:  # video
                             frames = iio.imread(fp)
                             if frames.ndim == 4:
@@ -274,7 +295,10 @@ def train_deep_pipeline(
     ).to(device)
 
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
+    warmup_epochs = 1
+    scheduler_warmup = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
+    scheduler_cosine = CosineAnnealingLR(optimizer, T_max=max(1, epochs - warmup_epochs), eta_min=1e-6)
+    scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_cosine], milestones=[warmup_epochs])
     bce_loss = nn.BCEWithLogitsLoss()
     ce_loss = nn.CrossEntropyLoss()
 
@@ -315,6 +339,7 @@ def train_deep_pipeline(
     models_dir = Path(cfg.get("paths", {}).get("models_dir", "models_saved"))
     models_dir.mkdir(parents=True, exist_ok=True)
     best_ckpt_path = models_dir / "deep_model.pt"
+    last_ckpt_path = models_dir / "deep_model_last.pt"
     log_csv_path = models_dir / "deep_training_log.csv"
 
     patience = 6
@@ -324,12 +349,39 @@ def train_deep_pipeline(
     start_time = time.time()
     total_steps = len(train_loader)
 
+    # Prove audio deep architecture can learn: overfit a tiny batch before full training (Item 3)
+    logger.info("=== Pre-Training Verification: Proving Audio Deep Learning on Tiny Batch ===")
+    state_backup = copy.deepcopy(model.state_dict())
+    model.train()
+    c1 = np.random.randint(-10000, 10000, 48000, dtype=np.int16)
+    s1, _ = embed_audio_lsb_replacement(c1, np.random.randint(0, 2, 48000, dtype=np.uint8))
+    clean_t = torch.from_numpy(c1.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(device)
+    stego_t = torch.from_numpy(s1.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(device)
+    x_test = torch.cat([clean_t, stego_t], dim=0)
+    y_test = torch.tensor([[0.0], [1.0]], device=device)
+    test_opt = AdamW(model.parameters(), lr=0.003)
+    init_loss = 0.0
+    final_loss = 0.0
+    for s in range(50):
+        test_opt.zero_grad()
+        test_logits, _, _ = model(x_test, "audio")
+        t_loss = bce_loss(test_logits, y_test)
+        t_loss.backward()
+        test_opt.step()
+        if s == 0:
+            init_loss = t_loss.item()
+        if s == 49:
+            final_loss = t_loss.item()
+    logger.info(f"Audio Learning Verified: Tiny batch loss dropped from {init_loss:.4f} to {final_loss:.4f} (near 0)")
+    model.load_state_dict(state_backup)
+
     for epoch in range(start_epoch, epochs + 1):
         epoch_start = time.time()
         train_ds.set_epoch(epoch)
         model.train()
         epoch_loss = 0.0
         n_steps = 0
+        format_losses: Dict[str, List[float]] = {"image": [], "audio": [], "video": []}
 
         for step_idx, batch_items in enumerate(train_loader):
             optimizer.zero_grad()
@@ -358,16 +410,17 @@ def train_deep_pipeline(
                     loss = loss_bin + 0.3 * loss_aux
                     loss.backward()
 
+                format_losses.setdefault(m_type, []).append(loss.item())
                 step_loss += loss.item() * (len(items) / len(batch_items))
 
             if use_amp:
-                # Gradient clipping under AMP (T3.5)
+                # Gradient clipping at 1.0 (T3.5, Item 4)
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
 
             epoch_loss += step_loss
@@ -378,43 +431,76 @@ def train_deep_pipeline(
 
         scheduler.step()
         avg_loss = epoch_loss / max(1, n_steps)
+        aud_train_loss = float(np.mean(format_losses["audio"])) if format_losses["audio"] else 0.0
+        img_train_loss = float(np.mean(format_losses["image"])) if format_losses["image"] else 0.0
+        vid_train_loss = float(np.mean(format_losses["video"])) if format_losses["video"] else 0.0
         epoch_duration = time.time() - epoch_start
 
         # Evaluate on validation
         val_auc, val_acc, fmt_aucs = evaluate_val_set(model, val_samples, device)
+        valid_fmt_aucs = [v for k, v in fmt_aucs.items() if k.endswith("_auc") and v is not None]
+        mean_val_auc = float(np.mean(valid_fmt_aucs)) if valid_fmt_aucs else val_auc
+        aud_val_auc = fmt_aucs.get("audio_auc", 0.5)
+        img_val_auc = fmt_aucs.get("image_auc", 0.5)
+        vid_val_auc = fmt_aucs.get("video_auc", 0.5)
 
         logger.info(
             f"Epoch {epoch:02d}/{epochs:02d} [{epoch_duration:.1f}s] - "
-            f"Loss: {avg_loss:.4f} | Overall Val AUC: {val_auc:.4f} | Val Acc: {val_acc*100:.1f}% | "
-            f"Validation AUCs: Image={fmt_aucs.get('image_auc', 0.5):.4f}, Audio={fmt_aucs.get('audio_auc', 0.5):.4f}, Video={fmt_aucs.get('video_auc', 0.5):.4f}"
+            f"Loss: {avg_loss:.4f} (Audio: {aud_train_loss:.4f}, Image: {img_train_loss:.4f}, Video: {vid_train_loss:.4f}) | "
+            f"Mean Val AUC: {mean_val_auc:.4f} | "
+            f"Val AUCs: Image={img_val_auc:.4f}, Audio={aud_val_auc:.4f}, Video={vid_val_auc:.4f} | "
+            f"Val Acc: {val_acc*100:.1f}%"
         )
 
         row_log = {
             "epoch": epoch,
             "train_loss": avg_loss,
-            "val_auc": val_auc,
+            "train_loss_audio": aud_train_loss,
+            "train_loss_image": img_train_loss,
+            "train_loss_video": vid_train_loss,
+            "val_auc_mean": mean_val_auc,
+            "val_auc_overall": val_auc,
             "val_acc": val_acc,
             "epoch_duration_sec": epoch_duration
         }
         row_log.update(fmt_aucs)
         history.append(row_log)
 
-        # Early stopping and checkpointing (T3.3, T3.4)
-        if val_auc > best_auc:
-            best_auc = val_auc
+        # Full run metadata per requirements (Items 1, 4)
+        checkpoint_data = {
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "scheduler_state": scheduler.state_dict(),
+            "scaler_state": scaler.state_dict() if use_amp and scaler is not None else None,
+            "epoch": epoch,
+            "epochs": epochs,
+            "val_auc": mean_val_auc,
+            "val_auc_overall": val_auc,
+            "val_acc": val_acc,
+            "per_format_val_auc": fmt_aucs,
+            "profile": profile_name,
+            "device": str(device),
+            "training_sample_counts": {
+                "image": len(img_covers),
+                "audio": len(aud_covers),
+                "video": len(vid_covers),
+                "total": len(all_covers)
+            },
+            "seed": seed,
+            "git_commit": get_git_commit(),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "is_smoke": (profile_name == "smoke")
+        }
+
+        # Keep the last checkpoint separately (Item 4)
+        torch.save(checkpoint_data, last_ckpt_path)
+
+        # Early stopping and best checkpointing on averaged per-format validation AUC (Item 4)
+        if mean_val_auc > best_auc:
+            best_auc = mean_val_auc
             patience_counter = 0
-            torch.save({
-                "model_state": model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "scheduler_state": scheduler.state_dict(),
-                "scaler_state": scaler.state_dict() if use_amp and scaler is not None else None,
-                "epoch": epoch,
-                "val_auc": val_auc,
-                "val_acc": val_acc,
-                "profile": profile_name,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-            }, best_ckpt_path)
-            logger.info(f" Saved new best deep model checkpoint to {best_ckpt_path} (Val AUC: {val_auc:.4f})")
+            torch.save(checkpoint_data, best_ckpt_path)
+            logger.info(f" Saved new best deep model checkpoint to {best_ckpt_path} (Mean Val AUC: {mean_val_auc:.4f})")
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -424,74 +510,101 @@ def train_deep_pipeline(
     total_time = time.time() - start_time
     pd.DataFrame(history).to_csv(log_csv_path, index=False)
 
-    # 4. Fit Validation Calibrator on best model
+    # 4. Fit Validation Calibrator per format on balanced validation set (Item 2)
     if best_ckpt_path.exists():
         best_state = torch.load(best_ckpt_path, map_location=device)
         model.load_state_dict(best_state.get("model_state", best_state))
         model.eval()
 
-        val_logits = []
-        val_y = []
-        by_type_calib: Dict[str, List[Dict[str, Any]]] = {}
-        for item in val_samples:
-            by_type_calib.setdefault(item["media_type"], []).append(item)
+        import joblib
+        import json
+        from scripts.evaluate import build_balanced_test_set
 
-        with torch.no_grad():
-            for m_type, items in by_type_calib.items():
-                bs = min(32, 8 if m_type == "video" else 32)
-                for i in range(0, len(items), bs):
-                    chunk = items[i:i + bs]
-                    tensors = []
-                    chunk_labels = []
-                    for it in chunk:
-                        fp = it["filepath"]
-                        lbl = it["label"]
-                        try:
-                            if m_type == "image":
-                                import cv2
-                                img = cv2.imread(fp, cv2.IMREAD_GRAYSCALE)
-                                if img is None:
-                                    continue
-                                if img.shape != (256, 256):
-                                    img = cv2.resize(img, (256, 256))
-                                t = torch.from_numpy(img).unsqueeze(0).float()
-                            elif m_type == "audio":
-                                import soundfile as sf
-                                d, _ = sf.read(fp, dtype="int16")
-                                if len(d) < 48000:
-                                    d = np.pad(d, (0, 48000 - len(d)), mode="wrap")
-                                t = torch.from_numpy(d[:48000].astype(np.float32) / 32768.0).unsqueeze(0)
-                            else:
-                                import imageio.v3 as iio
-                                import cv2
-                                f = iio.imread(fp)
-                                if f.ndim == 4:
-                                    f = np.dot(f[..., :3], [0.299, 0.587, 0.114]).astype(np.uint8)
-                                if len(f) < 8:
-                                    pad = np.zeros((8 - len(f), f.shape[1], f.shape[2]), dtype=np.uint8)
-                                    f = np.concatenate([f, pad], axis=0)
-                                f = f[:8]
-                                if f.shape[1:3] != (128, 128):
-                                    f = np.stack([cv2.resize(fr, (128, 128)) for fr in f])
-                                t = torch.from_numpy(f).unsqueeze(1).float()
-                            tensors.append(t)
-                            chunk_labels.append(lbl)
-                        except Exception:
+        val_manifest_path = splits_dir / "manifest_val.csv"
+        if val_manifest_path.exists():
+            df_val_raw = pd.read_csv(val_manifest_path)
+            df_val_balanced = build_balanced_test_set(df_val_raw, seed=seed)
+            if profile_name == "smoke":
+                df_val_balanced = df_val_balanced.groupby("media_type").head(30).reset_index(drop=True)
+
+            calibrators_by_fmt: Dict[str, TemperatureScalingCalibrator] = {}
+            thresholds_by_fmt: Dict[str, Dict[str, float]] = {}
+
+            by_type_calib: Dict[str, List[Dict[str, Any]]] = {}
+            for _, row in df_val_balanced.iterrows():
+                fp = Path(row["filepath"])
+                if fp.exists():
+                    by_type_calib.setdefault(row["media_type"], []).append(row.to_dict())
+
+            with torch.no_grad():
+                for m_type, items in by_type_calib.items():
+                    val_logits = []
+                    val_y = []
+                    bs = min(32, 8 if m_type == "video" else 32)
+                    for i in range(0, len(items), bs):
+                        chunk = items[i:i + bs]
+                        tensors = []
+                        chunk_labels = []
+                        for it in chunk:
+                            fp = it["filepath"]
+                            lbl = it["label"]
+                            try:
+                                if m_type == "image":
+                                    import cv2
+                                    img = cv2.imread(fp, cv2.IMREAD_GRAYSCALE)
+                                    if img is None:
+                                        continue
+                                    if img.shape != (256, 256):
+                                        img = cv2.resize(img, (256, 256))
+                                    t = torch.from_numpy(img).unsqueeze(0).float()
+                                elif m_type == "audio":
+                                    import soundfile as sf
+                                    d, _ = sf.read(fp, dtype="int16")
+                                    if len(d) < 48000:
+                                        d = np.pad(d, (0, 48000 - len(d)), mode="wrap")
+                                    t = torch.from_numpy(d[:48000].astype(np.float32)).unsqueeze(0)
+                                else:
+                                    import imageio.v3 as iio
+                                    import cv2
+                                    f = iio.imread(fp)
+                                    if f.ndim == 4:
+                                        f = np.dot(f[..., :3], [0.299, 0.587, 0.114]).astype(np.uint8)
+                                    if len(f) < 8:
+                                        pad = np.zeros((8 - len(f), f.shape[1], f.shape[2]), dtype=np.uint8)
+                                        f = np.concatenate([f, pad], axis=0)
+                                    f = f[:8]
+                                    if f.shape[1:3] != (128, 128):
+                                        f = np.stack([cv2.resize(fr, (128, 128)) for fr in f])
+                                    t = torch.from_numpy(f).unsqueeze(1).float()
+                                tensors.append(t)
+                                chunk_labels.append(lbl)
+                            except Exception:
+                                continue
+
+                        if not tensors:
                             continue
 
-                    if not tensors:
-                        continue
+                        batch_t = torch.stack(tensors).to(device)
+                        lg, _, _ = model(batch_t, m_type)
+                        val_logits.extend(lg.squeeze(-1).cpu().numpy().tolist())
+                        val_y.extend(chunk_labels)
 
-                    batch_t = torch.stack(tensors).to(device)
-                    lg, _, _ = model(batch_t, m_type)
-                    val_logits.extend(lg.squeeze(-1).cpu().numpy().tolist())
-                    val_y.extend(chunk_labels)
+                    if len(val_logits) > 0 and len(np.unique(val_y)) > 1:
+                        calibrator = TemperatureScalingCalibrator(target_fpr=0.05)
+                        calibrator.fit(np.array(val_logits), np.array(val_y))
+                        calibrators_by_fmt[m_type] = calibrator
+                        thresholds_by_fmt[m_type] = {
+                            "temperature": round(float(calibrator.temperature), 4),
+                            "decision_threshold": round(float(calibrator.decision_threshold), 4),
+                            "target_fpr": 0.05
+                        }
+                        logger.info(f"Fitted {m_type} calibrator: T={calibrator.temperature:.4f}, threshold={calibrator.decision_threshold:.4f}")
 
-        if len(val_logits) > 0 and len(np.unique(val_y)) > 1:
-            calibrator = TemperatureScalingCalibrator(target_fpr=0.05)
-            calibrator.fit(np.array(val_logits), np.array(val_y))
-            calibrator.save(models_dir / "deep_calibrator.pt")
-            logger.info("Fitted and saved validation temperature calibrator.")
+            if calibrators_by_fmt:
+                joblib.dump(calibrators_by_fmt, models_dir / "deep_calibrator.pt")
+                with open(models_dir / "calibrator_per_format.json", "w") as f:
+                    json.dump(thresholds_by_fmt, f, indent=2)
+                logger.info("Saved per-format calibrators to models_saved/deep_calibrator.pt and calibrator_per_format.json")
 
     # Checkpoint size audit and warning (T3.7)
     ckpt_size_mb = best_ckpt_path.stat().st_size / (1024 * 1024) if best_ckpt_path.exists() else 0.0

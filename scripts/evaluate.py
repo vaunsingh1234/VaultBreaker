@@ -33,18 +33,33 @@ from sklearn.metrics import (
     f1_score, roc_curve, confusion_matrix
 )
 
+import subprocess
+
 from vaultbreaker.utils.config import load_config
 from vaultbreaker.utils.logger import get_logger
 from vaultbreaker.utils.io import ensure_dir
 from vaultbreaker.models.unified_net import VaultBreakerUnifiedNet
 from vaultbreaker.models.deep_net import VaultBreakerDeepNet
-from vaultbreaker.training.calibrate import TemperatureScalingCalibrator
+from vaultbreaker.training.calibrate import TemperatureScalingCalibrator, load_format_calibrators
 from vaultbreaker.training.evaluate import (
     compute_metrics, compute_bootstrap_ci, compute_detection_error_pe
 )
 from vaultbreaker.features.extractor import MultiModalFeaturePipeline
 
 logger = get_logger("Evaluate")
+
+
+def get_git_commit() -> str:
+    """Safely obtain current git commit hash."""
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            cwd=str(Path(__file__).resolve().parent.parent)
+        ).decode("ascii").strip()
+        return commit
+    except Exception:
+        return "unknown"
 
 
 def compute_recall_at_fpr(y_true: np.ndarray, y_prob: np.ndarray, target_fprs=(0.01, 0.05, 0.10)) -> Dict[str, float]:
@@ -149,18 +164,12 @@ def evaluate_deep_model_test_set(
     model.load_state_dict(model_state)
     model.eval()
 
-    # Load Calibrator fitted on validation set
-    calibrator = None
-    if calibrator_path and calibrator_path.exists():
-        try:
-            calibrator = TemperatureScalingCalibrator.load(calibrator_path)
-            logger.info(f"Loaded deep calibrator (T={calibrator.temperature:.4f}, threshold={calibrator.decision_threshold:.4f})")
-        except Exception:
-            calibrator = TemperatureScalingCalibrator(target_fpr=0.05)
-    else:
-        calibrator = TemperatureScalingCalibrator(target_fpr=0.05)
-
-    decision_threshold = calibrator.decision_threshold
+    # Load Calibrators fitted on validation set per format (Item 2)
+    calibrators = load_format_calibrators(calibrator_path) if calibrator_path else {
+        fmt: TemperatureScalingCalibrator(target_fpr=0.05) for fmt in ["image", "audio", "video"]
+    }
+    for fmt, cal in calibrators.items():
+        logger.info(f"Loaded {fmt} deep calibrator (T={cal.temperature:.4f}, threshold={cal.decision_threshold:.4f})")
 
     records = []
     by_type: Dict[str, List[Dict[str, Any]]] = {}
@@ -172,6 +181,7 @@ def evaluate_deep_model_test_set(
     with torch.no_grad():
         for m_type, items in by_type.items():
             bs = min(batch_size, 8 if m_type == "video" else batch_size)
+            cal = calibrators.get(m_type, TemperatureScalingCalibrator(target_fpr=0.05))
             for i in range(0, len(items), bs):
                 chunk = items[i:i + bs]
                 tensors = []
@@ -192,7 +202,7 @@ def evaluate_deep_model_test_set(
                                 data = np.pad(data, (0, 48000 - len(data)), mode="wrap")
                             elif len(data) > 48000:
                                 data = data[:48000]
-                            t = torch.from_numpy(data.astype(np.float32) / 32768.0).unsqueeze(0)
+                            t = torch.from_numpy(data.astype(np.float32)).unsqueeze(0)
                         else:  # video
                             frames = iio.imread(fp)
                             if frames.ndim == 4:
@@ -219,7 +229,7 @@ def evaluate_deep_model_test_set(
                     raw_probs = [raw_probs]
 
                 for it, raw_p in zip(valid_chunk, raw_probs):
-                    cal_p = calibrator.calibrate_prob(raw_p) if calibrator else raw_p
+                    cal_p = cal.calibrate_prob(raw_p)
                     records.append({
                         "source_id": it["source_id"],
                         "filepath": it["filepath"],
@@ -234,15 +244,26 @@ def evaluate_deep_model_test_set(
     df_eval = pd.DataFrame(records)
     logger.info(f"Evaluated {len(df_eval)} balanced samples across formats.")
 
-    # 1. Overall Metrics (evaluated strictly at calibrated decision threshold)
+    # 1. Overall Metrics (evaluated with format-calibrated threshold per sample)
     y_true_all = df_eval["label"].values
     y_prob_all = df_eval["cal_prob"].values
     src_all = df_eval["source_id"].values
-    overall_metrics = compute_metrics(y_true_all, y_prob_all, threshold=decision_threshold, source_ids=src_all)
-    overall_metrics["recalls_at_fpr"] = compute_recall_at_fpr(y_true_all, y_prob_all)
-    overall_metrics["calibrated_threshold"] = round(float(decision_threshold), 4)
+    y_pred_all = np.array([
+        row["cal_prob"] >= calibrators.get(row["media_type"], TemperatureScalingCalibrator(target_fpr=0.05)).decision_threshold
+        for _, row in df_eval.iterrows()
+    ], dtype=int)
 
-    # 2. Per-Format Metrics
+    overall_metrics = compute_metrics(y_true_all, y_prob_all, threshold=0.5, source_ids=src_all)
+    overall_metrics["accuracy"] = round(float(accuracy_score(y_true_all, y_pred_all)), 4)
+    overall_metrics["recall"] = round(float(recall_score(y_true_all, y_pred_all, zero_division=0)), 4)
+    overall_metrics["precision"] = round(float(precision_score(y_true_all, y_pred_all, zero_division=0)), 4)
+    overall_metrics["recalls_at_fpr"] = compute_recall_at_fpr(y_true_all, y_prob_all)
+    overall_metrics["calibrated_thresholds"] = {
+        fmt: round(float(calibrators[fmt].decision_threshold), 4) for fmt in ["image", "audio", "video"] if fmt in calibrators
+    }
+    overall_metrics["calibrated_threshold"] = round(float(np.mean([cal.decision_threshold for cal in calibrators.values()])), 4)
+
+    # 2. Per-Format Metrics (evaluated strictly at that format's validation-calibrated threshold targeting 5% FPR)
     per_format_metrics = {}
     for fmt in ["image", "audio", "video"]:
         fmt_df = df_eval[df_eval["media_type"] == fmt]
@@ -250,13 +271,22 @@ def evaluate_deep_model_test_set(
             yt = fmt_df["label"].values
             yp = fmt_df["cal_prob"].values
             src = fmt_df["source_id"].values
-            m = compute_metrics(yt, yp, threshold=decision_threshold, source_ids=src)
+            cal = calibrators.get(fmt, TemperatureScalingCalibrator(target_fpr=0.05))
+            thresh_f = cal.decision_threshold
+            m = compute_metrics(yt, yp, threshold=thresh_f, source_ids=src)
             m["recalls_at_fpr"] = compute_recall_at_fpr(yt, yp)
-            m["calibrated_threshold"] = round(float(decision_threshold), 4)
+            m["calibrated_threshold"] = round(float(thresh_f), 4)
+            clean_yp = yp[yt == 0]
+            if len(clean_yp) > 0:
+                m["test_false_positive_rate"] = round(float(np.mean(clean_yp >= thresh_f)), 4)
+            else:
+                m["test_false_positive_rate"] = 0.0
             if m["unique_sources"] < 30:
                 m["status"] = "too few samples to trust"
                 m["warning"] = "too few samples to trust"
             per_format_metrics[fmt] = m
+
+    mean_decision_threshold = overall_metrics["calibrated_threshold"]
 
     # 3. Per-Method Metrics
     per_method_metrics = {}
@@ -268,8 +298,14 @@ def evaluate_deep_model_test_set(
         yt_m = sub_eval["label"].values
         yp_m = sub_eval["cal_prob"].values
         src_m = sub_eval["source_id"].values
-        m_res = compute_metrics(yt_m, yp_m, threshold=decision_threshold, source_ids=src_m)
+        meth_fmts = sub_stego["media_type"].unique()
+        if len(meth_fmts) == 1 and meth_fmts[0] in calibrators:
+            m_thresh = calibrators[meth_fmts[0]].decision_threshold
+        else:
+            m_thresh = mean_decision_threshold
+        m_res = compute_metrics(yt_m, yp_m, threshold=m_thresh, source_ids=src_m)
         m_res["recalls_at_fpr"] = compute_recall_at_fpr(yt_m, yp_m)
+        m_res["calibrated_threshold"] = round(float(m_thresh), 4)
         m_res["stego_sample_count"] = len(sub_stego)
         per_method_metrics[meth] = m_res
 
@@ -281,8 +317,9 @@ def evaluate_deep_model_test_set(
         yt_p = sub_eval["label"].values
         yp_p = sub_eval["cal_prob"].values
         src_p = sub_eval["source_id"].values
-        p_res = compute_metrics(yt_p, yp_p, threshold=decision_threshold, source_ids=src_p)
+        p_res = compute_metrics(yt_p, yp_p, threshold=mean_decision_threshold, source_ids=src_p)
         p_res["recalls_at_fpr"] = compute_recall_at_fpr(yt_p, yp_p)
+        p_res["calibrated_threshold"] = round(float(mean_decision_threshold), 4)
         p_res["stego_sample_count"] = len(sub_pl)
         per_payload_metrics[f"{pl:.2f}"] = p_res
 
@@ -647,6 +684,134 @@ def run_leave_one_method_out(records: List[Dict[str, Any]], per_format_metrics: 
     return results
 
 
+def select_best_models_on_validation(
+    models_dir: Path,
+    splits_dir: Optional[Path] = None,
+    device: Optional[torch.device] = None,
+    features_cache_dir: Optional[Path] = None,
+    seed: int = 42,
+    candidate_scores: Optional[Dict[str, Dict[str, float]]] = None,
+    save_path: Optional[Path] = None
+) -> Dict[str, Any]:
+    """
+    Select best model per format strictly on VALIDATION data (manifest_val.csv).
+    Test data is NEVER accessed or used here.
+    Candidates per format: deep_model, handcrafted_mlp, gradient_boosting.
+    Saves selection decisions and validation scores to models_saved/model_selection.json.
+    """
+    if candidate_scores is not None:
+        candidate_val_aucs = candidate_scores
+    else:
+        if splits_dir is None:
+            raise ValueError("splits_dir must be provided if candidate_scores is not provided.")
+        val_manifest = splits_dir / "manifest_val.csv"
+        if not val_manifest.exists():
+            logger.warning(f"Validation manifest {val_manifest} not found. Cannot select models.")
+            return {}
+
+        df_val_raw = pd.read_csv(val_manifest)
+        df_val_balanced = build_balanced_test_set(df_val_raw, seed=seed)
+
+        candidate_val_aucs: Dict[str, Dict[str, float]] = {
+            "image": {},
+            "audio": {},
+            "video": {}
+        }
+
+    # 1. Deep model on validation
+    deep_ckpt_path = models_dir / "deep_model.pt"
+    if deep_ckpt_path.exists():
+        try:
+            deep_results, _ = evaluate_deep_model_test_set(
+                deep_ckpt_path=deep_ckpt_path,
+                calibrator_path=models_dir / "deep_calibrator.pt",
+                df_test_balanced=df_val_balanced,
+                device=device
+            )
+            for fmt in ["image", "audio", "video"]:
+                if fmt in deep_results.get("per_format", {}):
+                    auc = deep_results["per_format"][fmt].get("roc_auc")
+                    if auc is not None:
+                        candidate_val_aucs[fmt]["deep_model"] = round(float(auc), 4)
+        except Exception as e:
+            logger.warning(f"Failed to evaluate deep model on val set: {e}")
+
+    # 2. Handcrafted MLP on validation
+    if (models_dir / "unified_model.pt").exists():
+        try:
+            mlp_results, _ = evaluate_handcrafted_model_test_set(
+                models_dir=models_dir,
+                df_test_balanced=df_val_balanced,
+                features_cache_dir=features_cache_dir
+            )
+            if mlp_results:
+                for fmt in ["image", "audio", "video"]:
+                    if fmt in mlp_results.get("per_format", {}):
+                        auc = mlp_results["per_format"][fmt].get("roc_auc")
+                        if auc is not None:
+                            candidate_val_aucs[fmt]["handcrafted_mlp"] = round(float(auc), 4)
+        except Exception as e:
+            logger.warning(f"Failed to evaluate handcrafted MLP on val set: {e}")
+
+    # 3. Gradient boosting on validation
+    try:
+        gb_results = evaluate_gradient_boosting_test_set(
+            models_dir=models_dir,
+            df_test_balanced=df_val_balanced,
+            features_cache_dir=features_cache_dir
+        )
+        for fmt in ["image", "audio", "video"]:
+            if fmt in gb_results:
+                auc = gb_results[fmt].get("roc_auc")
+                if auc is not None:
+                    candidate_val_aucs[fmt]["gradient_boosting"] = round(float(auc), 4)
+    except Exception as e:
+        logger.warning(f"Failed to evaluate gradient boosting on val set: {e}")
+
+    # Make selection per format
+    selection_record = {
+        "selection_metric": "validation_roc_auc",
+        "evaluated_on": "manifest_val.csv (strictly validation set, test data never used)",
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "formats": {}
+    }
+
+    display_names = {
+        "deep_model": "Deep Model (SRNet/Audio1D/VideoTemporal)",
+        "gradient_boosting": "Gradient Boosting (GBDT)",
+        "handcrafted_mlp": "Handcrafted Feature MLP"
+    }
+
+    for fmt in ["image", "audio", "video"]:
+        cands = candidate_val_aucs[fmt]
+        if not cands:
+            continue
+        best_model = max(cands.keys(), key=lambda k: cands[k])
+        best_auc = cands[best_model]
+
+        other_scores = ", ".join(f"{m}: {score:.4f}" for m, score in cands.items() if m != best_model)
+        reason = f"Best validation ROC-AUC ({best_auc:.4f})"
+        if other_scores:
+            reason += f" vs {other_scores}"
+
+        selection_record["formats"][fmt] = {
+            "selected_model": best_model,
+            "model_name": display_names.get(best_model, best_model),
+            "validation_roc_auc": best_auc,
+            "reason": reason,
+            "candidates": cands
+        }
+        logger.info(f"Model Selection for {fmt.upper()}: {best_model} ({reason})")
+
+    out_file = save_path if save_path is not None else (models_dir / "model_selection.json")
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_file, "w") as f:
+        json.dump(selection_record, f, indent=2)
+    logger.info(f"Saved model selection decisions to {out_file}")
+
+    return selection_record
+
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate VaultBreaker model on test dataset.")
     parser.add_argument("--config", type=str, default="configs/default.yaml", help="Path to config file")
@@ -661,25 +826,12 @@ def main():
     base_results_dir = Path(paths_cfg.get("results_dir", "docs/RESULTS"))
     features_cache_dir = Path(paths_cfg.get("features_dir", "data/features")) / "cache"
 
-    # Separate results directory for smoke runs
-    if args.smoke:
-        results_dir = base_results_dir / "smoke"
-        logger.info(f"=== SMOKE RUN: Writing exclusively to {results_dir} (real results protected) ===")
-    else:
-        results_dir = base_results_dir
-
-    ensure_dir(results_dir)
-
     deep_ckpt_path = models_dir / "deep_model.pt"
     deep_calibrator_path = models_dir / "deep_calibrator.pt"
     test_manifest_path = splits_dir / "manifest_test.csv"
 
     if not test_manifest_path.exists():
         raise FileNotFoundError(f"Test manifest {test_manifest_path} not found! Run make_dataset.py first.")
-
-    df_test_raw = pd.read_csv(test_manifest_path)
-    # Build strictly balanced test set (1 clean to 1 stego per source, evenly sampled)
-    df_test_balanced = build_balanced_test_set(df_test_raw, seed=config.get("seed", 42))
 
     device_str = args.device
     if device_str == "auto":
@@ -690,6 +842,63 @@ def main():
         else:
             device_str = "cpu"
     device = torch.device(device_str)
+
+    # Determine metadata and smoke status strictly from checkpoint and flags (Item 1)
+    deep_metadata = {}
+    is_smoke_run = bool(args.smoke)
+    if deep_ckpt_path.exists():
+        try:
+            ckpt_meta = torch.load(deep_ckpt_path, map_location="cpu")
+            if isinstance(ckpt_meta, dict):
+                if ckpt_meta.get("is_smoke") is True or str(ckpt_meta.get("profile", "")).lower() == "smoke":
+                    is_smoke_run = True
+                deep_metadata = {
+                    "profile": ckpt_meta.get("profile", "smoke" if is_smoke_run else "laptop"),
+                    "epochs": ckpt_meta.get("epoch", ckpt_meta.get("epochs", 8)),
+                    "device": ckpt_meta.get("device", device_str),
+                    "training_sample_counts": ckpt_meta.get("training_sample_counts", {}),
+                    "seed": ckpt_meta.get("seed", config.get("seed", 42)),
+                    "git_commit": ckpt_meta.get("git_commit", get_git_commit()),
+                    "timestamp": ckpt_meta.get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")),
+                    "is_smoke": is_smoke_run
+                }
+        except Exception:
+            pass
+
+    if not deep_metadata:
+        deep_metadata = {
+            "profile": "smoke" if is_smoke_run else "laptop",
+            "epochs": 8,
+            "device": device_str,
+            "training_sample_counts": {},
+            "seed": config.get("seed", 42),
+            "git_commit": get_git_commit(),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "is_smoke": is_smoke_run
+        }
+
+    # Strict isolation: smoke runs write ONLY to docs/RESULTS/smoke/ (Item 1)
+    if is_smoke_run:
+        results_dir = base_results_dir / "smoke"
+        logger.info(f"=== SMOKE RUN: Writing exclusively to {results_dir} (real results protected) ===")
+    else:
+        results_dir = base_results_dir
+        logger.info(f"=== REAL EVALUATION RUN ({deep_metadata.get('profile')}): Writing to {results_dir} ===")
+
+    ensure_dir(results_dir)
+
+    # Run model selection strictly on validation set (Item 5)
+    select_best_models_on_validation(
+        models_dir=models_dir,
+        splits_dir=splits_dir,
+        device=device,
+        features_cache_dir=features_cache_dir,
+        seed=config.get("seed", 42)
+    )
+
+    df_test_raw = pd.read_csv(test_manifest_path)
+    # Build strictly balanced test set (1 clean to 1 stego per source, evenly sampled)
+    df_test_balanced = build_balanced_test_set(df_test_raw, seed=config.get("seed", 42))
 
     deep_eval_results = None
     handcrafted_eval_results = None
@@ -715,9 +924,8 @@ def main():
         lomo = run_leave_one_method_out(deep_records, deep_eval_results["per_format"], threshold=t_cal)
         deep_eval_results["leave_one_method_out"] = lomo
 
-        if args.smoke:
-            deep_eval_results["is_smoke"] = True
-            deep_eval_results["smoke_label"] = "Smoke test, not real performance"
+        # Record full provenance metadata (Item 1)
+        deep_eval_results.update(deep_metadata)
 
         with open(results_dir / "metrics_deep.json", "w") as f:
             json.dump(deep_eval_results, f, indent=2)
@@ -737,9 +945,8 @@ def main():
             handcrafted_eval_results["method_payload_breakdown"] = build_method_payload_breakdown(hc_records, threshold=t_hc)
             handcrafted_eval_results["leave_one_method_out"] = run_leave_one_method_out(hc_records, handcrafted_eval_results["per_format"], threshold=t_hc)
 
-            if args.smoke:
-                handcrafted_eval_results["is_smoke"] = True
-                handcrafted_eval_results["smoke_label"] = "Smoke test, not real performance"
+            # Record full provenance metadata (Item 1)
+            handcrafted_eval_results.update(deep_metadata)
 
             with open(results_dir / "metrics_handcrafted.json", "w") as f:
                 json.dump(handcrafted_eval_results, f, indent=2)
@@ -759,7 +966,7 @@ def main():
         gbdt_metrics=gbdt_eval_results
     )
     comp_data = {
-        "is_smoke": bool(args.smoke),
+        **deep_metadata,
         "test_manifest": str(test_manifest_path),
         "comparison": comparison_table
     }
@@ -771,6 +978,7 @@ def main():
     primary_metrics = deep_eval_results or handcrafted_eval_results
     if primary_metrics:
         primary_metrics["side_by_side_comparison"] = comparison_table
+        primary_metrics.update(deep_metadata)
         with open(results_dir / "metrics.json", "w") as f:
             json.dump(primary_metrics, f, indent=2)
 

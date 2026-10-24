@@ -1,0 +1,17 @@
+{
+  "image": {
+    "temperature": 1.1873,
+    "decision_threshold": 0.0373,
+    "target_fpr": 0.05
+  },
+  "audio": {
+    "temperature": 10.0,
+    "decision_threshold": 0.4978,
+    "target_fpr": 0.05
+  },
+  "video": {
+    "temperature": 10.0,
+    "decision_threshold": 0.5855,
+    "target_fpr": 0.05
+  }
+}

@@ -571,5 +571,18 @@
         "note": "Advantage of 0.0099 AUC vs format average (0.9311)"
       }
     }
-  }
+  },
+  "profile": "laptop",
+  "epochs": 5,
+  "device": "mps",
+  "training_sample_counts": {
+    "image": 1395,
+    "audio": 706,
+    "video": 244,
+    "total": 2345
+  },
+  "seed": 42,
+  "git_commit": "ad6d316d63844a9363987ee3eb8e0ff859f0110d",
+  "timestamp": "2026-10-24 11:06:30",
+  "is_smoke": false
 }
