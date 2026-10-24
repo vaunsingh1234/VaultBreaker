@@ -53,8 +53,13 @@ from app.ui.components import (
     score_pill_html,
     render_entities_table,
     render_format_card,
+    build_metrics_table_html,
+    build_comparison_table_html,
     load_real_metrics,
+    load_display_metrics,
     load_comparison_results,
+    load_display_comparison_results,
+    get_active_checkpoint_rows,
     empty_state
 )
 from vaultbreaker.stego_tools.hide import hide_message, get_container_capacity
@@ -97,28 +102,6 @@ def load_config():
 
 config_data = load_config()
 
-def get_checkpoint_info():
-    """Load active model checkpoint information and file metadata."""
-    ckpt_path = root_dir / "models_saved" / "unified_model.pt"
-    if ckpt_path.exists():
-        try:
-            st_info = ckpt_path.stat()
-            mod_dt = datetime.fromtimestamp(st_info.st_mtime).strftime("%Y-%m-%d %H:%M")
-            return {
-                "name": ckpt_path.name,
-                "date": mod_dt,
-                "exists": True
-            }
-        except Exception:
-            pass
-    return {
-        "name": "Not available yet",
-        "date": "Run make train",
-        "exists": False
-    }
-
-ckpt_info = get_checkpoint_info()
-
 # 6 PAGES NAVIGATION DEFINITION
 PAGES = [
     {"id": "scan", "label": "Scan", "icon": "shield"},
@@ -130,8 +113,16 @@ PAGES = [
 ]
 
 # Session State Initialization
+query_page = st.query_params.get("page", None) if hasattr(st, "query_params") else None
 if "nav_page" not in st.session_state:
-    st.session_state["nav_page"] = "scan"
+    if query_page in [p["id"] for p in PAGES]:
+        st.session_state["nav_page"] = query_page
+        st.session_state["_last_seen_query_page"] = query_page
+    else:
+        st.session_state["nav_page"] = "scan"
+elif query_page in [p["id"] for p in PAGES] and st.session_state.get("_last_seen_query_page") != query_page:
+    st.session_state["nav_page"] = query_page
+    st.session_state["_last_seen_query_page"] = query_page
 elif st.session_state["nav_page"] not in [p["id"] for p in PAGES]:
     st.session_state["nav_page"] = "scan"
 
@@ -174,33 +165,63 @@ with st.sidebar:
 
     st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
 
-    # Telemetry and Calibrator parameters in clean glass box
+    # Active checkpoints per format and calibration parameters
     calibrator = predictor.calibrator
-    threshold_val = calibrator.decision_threshold
-    fpr_val = calibrator.target_fpr
-    models_cfg = config_data.get("models")
-    latent_dim_val = models_cfg.get("latent_dim") if isinstance(models_cfg, dict) else None
-    latent_str = f"{latent_dim_val}-d Latent" if latent_dim_val is not None else "Unified Latent"
+    active_rows, target_fpr, cal_per_fmt = get_active_checkpoint_rows()
+    far_str = f"{target_fpr * 100:.1f}%"
 
-    st.markdown(f'''
-    <div class="glass-card" style="padding: 12px; margin-bottom: 8px;">
-        <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.08em; margin-bottom: 6px;">Active Checkpoint</div>
-        <div style="font-size: 12px; font-weight: 600; font-family: 'JetBrains Mono'; color: var(--text-primary);">{ckpt_info["name"]}</div>
-        <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Compiled: {ckpt_info["date"]}</div>
-        <div style="height: 8px; border-bottom: 1px solid var(--glass-border); margin-bottom: 8px;"></div>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;" title="Alert threshold: files scoring above this are flagged">Alert threshold: <strong style="color:var(--status-amber); font-family:'JetBrains Mono';">{threshold_val:.4f}</strong></div>
-        <div style="font-size: 11px; color: var(--text-secondary);" title="False alarm rate on clean files">Clean false alarm rate: <strong style="color:var(--text-primary); font-family:'JetBrains Mono';">{fpr_val * 100:.1f}%</strong></div>
-    </div>
-    ''', unsafe_allow_html=True)
+    rows_html = "".join([
+        f'<tr>'
+        f'<td style="font-weight:600; color:var(--text-primary);">{r["format"]}</td>'
+        f'<td style="font-family:\'JetBrains Mono\'; font-size:9.5px; color:var(--text-secondary); max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{r["model"]}">{r["model"]}</td>'
+        f'<td style="font-family:\'JetBrains Mono\'; color:var(--status-amber); font-weight:600; text-align:right;">{r["threshold"]:.4f}</td>'
+        f'<td style="color:var(--text-muted); font-size:9.5px; text-align:right; white-space:nowrap;">{r["date"]}</td>'
+        f'</tr>'
+        for r in active_rows
+    ])
+
+    ckpt_card_html = (
+        '<div class="glass-card" style="padding: 12px; margin-bottom: 8px;">\n'
+        '<div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.08em; margin-bottom: 6px;">Active Checkpoints by Format</div>\n'
+        '<table class="glass-mini-table">\n'
+        '<thead><tr><th>Format</th><th>Model</th><th style="text-align:right;">Threshold</th><th style="text-align:right;">File Date</th></tr></thead>\n'
+        f'<tbody>{rows_html}</tbody>\n'
+        '</table>\n'
+        '<div style="height: 6px; border-bottom: 1px solid var(--glass-border); margin: 6px 0;"></div>\n'
+        f'<div style="font-size: 11px; color: var(--text-secondary);" title="Clean false alarm rate target enforced during calibration">Clean false alarm rate: <strong style="color:var(--text-primary); font-family:\'JetBrains Mono\';">{far_str}</strong></div>\n'
+        '</div>'
+    )
+    st.markdown(ckpt_card_html, unsafe_allow_html=True)
 
     with st.expander("Advanced Calibration Parameters", expanded=False):
-        temp_val = calibrator.temperature
-        st.markdown(f'''
-        <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">
-            <strong>Calibration temperature:</strong> <code style="font-family:'JetBrains Mono'; color:var(--text-primary);">{temp_val:.4f}</code><br/>
-            <span style="color:var(--text-muted); font-size:10px;">Post-hoc logit scaling factor fitted on validation data.</span>
-        </div>
-        ''', unsafe_allow_html=True)
+        cal_param_rows = []
+        for fmt in ["image", "audio", "video"]:
+            fmt_c = cal_per_fmt.get(fmt, {})
+            t_val = fmt_c.get("temperature", calibrator.temperature)
+            th_val = fmt_c.get("decision_threshold", calibrator.decision_threshold)
+            tf_val = fmt_c.get("target_fpr", target_fpr)
+            cal_param_rows.append(
+                f'<tr>'
+                f'<td style="font-weight:600; color:var(--text-primary);">{fmt.capitalize()}</td>'
+                f'<td style="font-family:\'JetBrains Mono\'; color:var(--text-primary); text-align:right;">{float(t_val):.4f}</td>'
+                f'<td style="font-family:\'JetBrains Mono\'; color:var(--status-amber); text-align:right;">{float(th_val):.4f}</td>'
+                f'<td style="font-family:\'JetBrains Mono\'; color:var(--status-clean); text-align:right;">{float(tf_val)*100:.1f}%</td>'
+                f'</tr>'
+            )
+        expander_html = (
+            '<div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">\n'
+            '<table class="glass-mini-table">\n'
+            '<thead><tr><th>Format</th><th style="text-align:right;">Temp</th><th style="text-align:right;">Threshold</th><th style="text-align:right;">Tgt FPR</th></tr></thead>\n'
+            f'<tbody>{"".join(cal_param_rows)}</tbody>\n'
+            '</table>\n'
+            '<div style="margin-top: 8px; font-size: 10px; color: var(--text-muted); line-height: 1.4;">\n'
+            '• <strong>Temperature:</strong> Divides raw neural logits to calibrate probabilities so scores reflect empirical accuracy.<br/>\n'
+            '• <strong>Threshold:</strong> Alert boundary; containers scoring higher are flagged as steganography.<br/>\n'
+            '• <strong>Target FPR:</strong> Tolerated clean-file false alarm rate.\n'
+            '</div>\n'
+            '</div>'
+        )
+        st.markdown(expander_html, unsafe_allow_html=True)
 
 
 # --- THUMBNAIL CACHING HELPER ---
@@ -340,7 +361,7 @@ def render_scan_page():
                 <span style="font-size:16px; font-weight:600; color:var(--text-primary);">{html.escape(fname)}</span>
             </div>
             <div style="font-size:12px; color:var(--text-secondary);">
-                Media Type: <strong style="color:var(--text-primary); text-transform:uppercase;">{mtype}</strong> ({fmt.upper()}) &bull; Container Size: <strong style="color:var(--text-primary);">{sz_kb:.1f} KB</strong>
+                Media Type: <strong style="color:var(--text-primary); text-transform:uppercase;">{mtype}</strong> ({fmt.upper()}) · Container Size: <strong style="color:var(--text-primary);">{sz_kb:.1f} KB</strong>
             </div>
             <div style="margin-top: 6px; font-size:12px; color:var(--text-secondary);">
                 Model Selected: <strong style="color:#EDEDED;">{html.escape(model_name_disp)}</strong>
@@ -557,10 +578,11 @@ def render_scan_page():
     </div>
     ''', unsafe_allow_html=True)
 
-    m_data = load_real_metrics()
-    if m_data and m_data.get("is_smoke"):
+    m_data = load_display_metrics()
+    is_smoke = bool(m_data and (m_data.get("is_smoke") or str(m_data.get("profile", "")).lower() == "smoke" or not m_data.get("profile")))
+    if is_smoke:
         st.markdown('''
-        <div style="padding: 8px 12px; border-radius: 6px; background: rgba(224, 179, 65, 0.15); border: 1px solid #E0B341; color: #E0B341; margin-bottom: 10px; font-weight: 600; font-size: 13px;">
+        <div class="badge-smoke-banner">
             ⚠️ Smoke test, not real performance
         </div>
         ''', unsafe_allow_html=True)
@@ -574,7 +596,8 @@ def render_scan_page():
             badge="IMAGE",
             m_dict=img_metrics,
             help_auc="Diagnostic discrimination on image spatial and frequency domain (1.0 = perfect)",
-            help_acc="Percentage of correct clean vs stego verdicts on test image partition"
+            help_acc="Percentage of correct clean vs stego verdicts on test image partition",
+            is_smoke=is_smoke
         ), unsafe_allow_html=True)
 
     with col_b2:
@@ -584,7 +607,8 @@ def render_scan_page():
             badge="AUDIO",
             m_dict=aud_metrics,
             help_auc="Discrimination ability on acoustic LSB and echo hiding",
-            help_acc="Percentage of correct clean vs stego verdicts on test audio waveforms"
+            help_acc="Percentage of correct clean vs stego verdicts on test audio waveforms",
+            is_smoke=is_smoke
         ), unsafe_allow_html=True)
 
     with col_b3:
@@ -594,7 +618,8 @@ def render_scan_page():
             badge="VIDEO",
             m_dict=vid_metrics,
             help_auc="Discrimination ability across temporal video streams",
-            help_acc="Percentage of correct clean vs stego verdicts on test video containers"
+            help_acc="Percentage of correct clean vs stego verdicts on test video containers",
+            is_smoke=is_smoke
         ), unsafe_allow_html=True)
 
 
@@ -752,10 +777,10 @@ def render_hide_page():
             cb_val = hide_res.get("capacity_bytes")
             st.markdown(f'''
             <div style="font-size:12px; color:var(--text-secondary); margin-top:10px; line-height:1.7;">
-                &bull; Output Container: <strong style="color:var(--text-primary);">{out_file.name}</strong><br/>
-                &bull; Payload Embedded: <strong style="color:var(--text-primary);">{pb_val if pb_val is not None else 0:,} bytes</strong> ({tb_val if tb_val is not None else 0:,} bits)<br/>
-                &bull; Container Capacity: <strong style="color:var(--text-primary);">{cb_val if cb_val is not None else 0:,} bytes</strong><br/>
-                &bull; Destruction Safeguard: <span style="color:var(--status-amber);">Lossless format enforced ({out_file.suffix.upper()[1:]})</span>
+                · Output Container: <strong style="color:var(--text-primary);">{out_file.name}</strong><br/>
+                · Payload Embedded: <strong style="color:var(--text-primary);">{pb_val if pb_val is not None else 0:,} bytes</strong> ({tb_val if tb_val is not None else 0:,} bits)<br/>
+                · Container Capacity: <strong style="color:var(--text-primary);">{cb_val if cb_val is not None else 0:,} bytes</strong><br/>
+                · Destruction Safeguard: <span style="color:var(--status-amber);">Lossless format enforced ({out_file.suffix.upper()[1:]})</span>
             </div>
             ''', unsafe_allow_html=True)
 
@@ -874,9 +899,9 @@ def render_reveal_page():
                 <div style="background: rgba(63, 182, 122, 0.12); border: 1px solid rgba(63, 182, 122, 0.35); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
                     <div style="font-weight:600; color:#3FB67A; font-size:14px; margin-bottom:4px;">Message Successfully Extracted</div>
                     <div style="font-size:12px; color:var(--text-secondary);">
-                        &bull; Technique: <strong style="color:var(--text-primary);">{html.escape(res.method)}</strong><br/>
-                        &bull; Confidence: <strong style="color:var(--text-primary);">{html.escape(res.confidence)}</strong><br/>
-                        &bull; Payload Size: <strong style="color:var(--text-primary); font-family:'JetBrains Mono';">{len(res.data):,} bytes</strong>
+                        · Technique: <strong style="color:var(--text-primary);">{html.escape(res.method)}</strong><br/>
+                        · Confidence: <strong style="color:var(--text-primary);">{html.escape(res.confidence)}</strong><br/>
+                        · Payload Size: <strong style="color:var(--text-primary); font-family:'JetBrains Mono';">{len(res.data):,} bytes</strong>
                     </div>
                 </div>
                 ''', unsafe_allow_html=True)
@@ -961,28 +986,46 @@ def render_data_explorer_page():
         img_n = media_c.get("image") or 0
         aud_n = media_c.get("audio") or 0
         vid_n = media_c.get("video") or 0
+        items_c2 = [
+            ("Images", f"{img_n:,}"),
+            ("Audio", f"{aud_n:,}"),
+            ("Video", f"{vid_n:,}"),
+        ]
+        sub_c2 = f"Images {img_n:,} / Audio {aud_n:,} / Video {vid_n:,}"
         st.markdown(stat_card(
             title="Format Breakdown",
-            value=f"{img_n} Img &bull; {aud_n} Aud",
-            subtext=f"{vid_n} video streams",
-            help_text="Standardized media files across image (256x256), audio (16kHz), and video (128x128)"
+            value=sub_c2,
+            subtext=sub_c2,
+            items=items_c2,
+            help_text="Standardized media files across image (256x256), audio (16kHz), and video (128x128)",
+            icon_name="grid"
         ), unsafe_allow_html=True)
     with c3:
         tr_n = split_c.get("train") or 0
+        val_n = split_c.get("val") or 0
         te_n = split_c.get("test") or 0
+        items_c3 = [
+            ("Train", f"{tr_n:,}"),
+            ("Val", f"{val_n:,}"),
+            ("Test", f"{te_n:,}"),
+        ]
+        sub_c3 = f"Train {tr_n:,} / Val {val_n:,} / Test {te_n:,}"
         st.markdown(stat_card(
             title="Partition Splits",
-            value=f"{tr_n} Trn &bull; {te_n} Tst",
-            subtext=f"{split_c.get('val') or 0} validation files",
-            help_text="Independent split distribution ensuring zero source contamination between train and test"
+            value=sub_c3,
+            subtext=sub_c3,
+            items=items_c3,
+            help_text="Independent split distribution ensuring zero source contamination between train and test",
+            icon_name="layers"
         ), unsafe_allow_html=True)
     with c4:
-        bal_str = f"{clean_n} Clean &bull; {stego_n} Stego"
+        bal_str = f"Clean {clean_n:,} · Stego {stego_n:,}"
         st.markdown(stat_card(
             title="Dataset Balance",
             value="50.0% / 50.0%",
             subtext=bal_str,
-            help_text="Exact equal proportion of clean baseline media and steganographic samples"
+            help_text="Exact equal proportion of clean baseline media and steganographic samples",
+            icon_name="shield"
         ), unsafe_allow_html=True)
 
     # "About this data" Card
@@ -1161,7 +1204,7 @@ def render_data_explorer_page():
                         {html.escape(fname)}
                     </div>
                     <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">
-                        Split: <span class="badge-media">{split_name.upper()}</span> &bull; SHA: <code>{sha_prefix}</code>
+                        Split: <span class="badge-media">{split_name.upper()}</span> · SHA: <code>{sha_prefix}</code>
                     </div>
                     <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
                         Condition: <strong style="color:var(--text-primary);">{b_info["label_str"]}</strong>
@@ -1208,7 +1251,7 @@ def render_results_page():
     </div>
     ''', unsafe_allow_html=True)
 
-    metrics_data = load_real_metrics()
+    metrics_data = load_display_metrics()
 
     if not metrics_data:
         st.markdown('''
@@ -1219,146 +1262,44 @@ def render_results_page():
         ''', unsafe_allow_html=True)
         return
 
-    # Real profile badge
-    profile_name = str(metrics_data.get("profile", "laptop")).upper()
-    device_name = str(metrics_data.get("device", "auto"))
-    epochs_val = metrics_data.get("epochs", "N/A")
-    st.markdown(f'''
-    <div style="display:flex; align-items:center; gap:8px; margin-bottom: 16px;">
-        <span style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; background:rgba(63, 182, 122, 0.15); border:1px solid #3FB67A; color:#3FB67A;">
-            REAL RUN: {profile_name} PROFILE
-        </span>
-        <span style="font-size:12px; color:var(--text-secondary);">
-            Device: <strong>{device_name}</strong> | Epochs: <strong>{epochs_val}</strong> | Commit: <code>{str(metrics_data.get("git_commit", "unknown"))[:8]}</code>
-        </span>
-    </div>
-    ''', unsafe_allow_html=True)
+    is_smoke = bool(metrics_data.get("is_smoke") or str(metrics_data.get("profile", "")).lower() == "smoke" or not metrics_data.get("profile"))
 
-    # Table for Image / Audio / Video / Overall
-    overall_m = metrics_data.get("overall") or {}
-    per_fmt = metrics_data.get("per_format") or {}
-    img_m = per_fmt.get("image") or {}
-    aud_m = per_fmt.get("audio") or {}
-    vid_m = per_fmt.get("video") or {}
+    if is_smoke:
+        st.markdown('''
+        <div class="badge-smoke-banner">
+            ⚠️ Smoke test, not real performance
+        </div>
+        ''', unsafe_allow_html=True)
+    else:
+        profile_name = str(metrics_data.get("profile", "laptop")).upper()
+        device_name = str(metrics_data.get("device", "auto"))
+        epochs_val = metrics_data.get("epochs", "N/A")
+        st.markdown(f'''
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom: 16px;">
+            <span style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; background:rgba(63, 182, 122, 0.15); border:1px solid #3FB67A; color:#3FB67A;">
+                REAL RUN: {profile_name} PROFILE
+            </span>
+            <span style="font-size:12px; color:var(--text-secondary);">
+                Device: <strong>{device_name}</strong> | Epochs: <strong>{epochs_val}</strong> | Commit: <code>{str(metrics_data.get("git_commit", "unknown"))[:8]}</code>
+            </span>
+        </div>
+        ''', unsafe_allow_html=True)
 
-    def format_row(name: str, m: Dict[str, Any]):
-        n_src = m.get("unique_sources")
-        trust_badge = ""
-        if (n_src is not None and n_src < 30) or m.get("status") == "too few samples to trust" or m.get("warning") == "too few samples to trust":
-            trust_badge = ' <span style="font-size:10px; color:#E0B341; padding:2px 6px; border-radius:4px; background:rgba(224,179,65,0.15); border:1px solid rgba(224,179,65,0.3); margin-left:6px; font-weight:normal;">too few samples to trust</span>'
-
-        raw_acc = m.get("accuracy")
-        acc = f"{float(raw_acc) * 100:.1f}%" if raw_acc is not None else "N/A"
-        raw_auc = m.get("roc_auc")
-        auc = f"{float(raw_auc):.4f}" if raw_auc is not None else "N/A"
-        ci = m.get("roc_auc_ci95")
-        ci_str = f"[{ci[0]:.3f}, {ci[1]:.3f}]" if isinstance(ci, list) and len(ci) == 2 else ""
-
-        if name == "Audio" and raw_auc is not None and float(raw_auc) <= 0.55:
-            trust_badge += ' <span style="font-size:10px; color:#E05252; padding:2px 6px; border-radius:4px; background:rgba(224,82,82,0.15); border:1px solid rgba(224,82,82,0.3); margin-left:6px; font-weight:normal;">deep audio near 0.5 (not used; GBDT used instead)</span>'
-        
-        # Recall @ 5% FPR
-        rfpr = m.get("recalls_at_fpr", {})
-        r5 = rfpr.get("recall_at_5pct_fpr") if isinstance(rfpr, dict) else m.get("recall_5pct_fpr")
-        r5_str = f"{float(r5) * 100:.1f}%" if r5 is not None else "N/A"
-
-        raw_prec = m.get("precision")
-        prec = f"{float(raw_prec) * 100:.1f}%" if raw_prec is not None else "N/A"
-        raw_rec = m.get("recall")
-        rec = f"{float(raw_rec) * 100:.1f}%" if raw_rec is not None else "N/A"
-        n_files = m.get("sample_count")
-        src_str = f"{n_files} files ({n_src} sources)" if n_files and n_src else "N/A"
-        return f'''
-        <tr>
-            <td style="font-weight:600; color:#EDEDED;">{name}{trust_badge}</td>
-            <td style="font-family:'JetBrains Mono'; font-weight:600; color:#EDEDED;">{acc}</td>
-            <td style="font-family:'JetBrains Mono'; color:#E0B341;">{auc} <span style="font-size:10px; color:#8B8B8B;">{ci_str}</span></td>
-            <td style="font-family:'JetBrains Mono'; color:#3FB67A;">{r5_str}</td>
-            <td style="font-family:'JetBrains Mono'; color:#3FB67A;">{prec}</td>
-            <td style="font-family:'JetBrains Mono'; color:#3FB67A;">{rec}</td>
-            <td style="color:#B5B5B5; font-size:12px;">{src_str}</td>
-        </tr>
-        '''
-
-    table_html = f'''
-    <table class="glass-table">
-        <thead>
-            <tr>
-                <th>Modality</th>
-                <th title="Accuracy at threshold calibrated on validation set (5% FPR)">Calibrated Acc (5% FPR)</th>
-                <th title="Area under ROC curve with 95% bootstrap confidence interval">ROC-AUC [95% CI]</th>
-                <th title="Recall at 5% False Positive Rate">Recall @ 5% FPR</th>
-                <th title="Fraction of flagged files that are true stego">Precision</th>
-                <th title="Fraction of true stego files successfully detected">Recall</th>
-                <th title="Evaluated test partition scale">Test Set Scale</th>
-            </tr>
-        </thead>
-        <tbody>
-            {format_row("Image", img_m)}
-            {format_row("Audio", aud_m)}
-            {format_row("Video", vid_m)}
-            {format_row("Overall", overall_m)}
-        </tbody>
-    </table>
-    '''
+    # Main Metrics Table (Format | Accuracy | ROC-AUC (95% CI) | Recall @1% FPR | Recall @5% FPR | Recall @10% FPR | Test files)
+    table_html = build_metrics_table_html(metrics_data, is_smoke=is_smoke)
     st.markdown(table_html, unsafe_allow_html=True)
 
-    # Side-by-Side Model Comparison Table
-    comparison_data = load_comparison_results()
+    # Side-by-Side Model Comparison Table (Format | Deep model | Handcrafted MLP | Gradient boosting)
+    comparison_data = load_display_comparison_results()
     if comparison_data:
+        comp_is_smoke = bool(comparison_data.get("is_smoke") or str(comparison_data.get("profile", "")).lower() == "smoke" or not comparison_data.get("profile"))
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         st.markdown('''
         <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:8px;">
             Side-by-Side Model Comparison (Same Test Manifest)
         </div>
         ''', unsafe_allow_html=True)
-
-        comp_rows = []
-        for fmt_key in ["image", "audio", "video"]:
-            fmt_data = comparison_data.get(fmt_key, {})
-            fmt_label = fmt_key.capitalize()
-
-            def _fmt_cell(val):
-                if isinstance(val, dict):
-                    auc_val = val.get("roc_auc")
-                    r5_val = val.get("recall_at_5pct_fpr")
-                    acc_val = val.get("accuracy")
-                    auc_s = f"{float(auc_val):.4f}" if auc_val is not None else "N/A"
-                    r5_s = f"{float(r5_val) * 100:.1f}%" if r5_val is not None else "N/A"
-                    acc_s = f"{float(acc_val) * 100:.1f}%" if acc_val is not None else "N/A"
-                    return f"AUC: <strong>{auc_s}</strong> | R@5%: {r5_s} | Acc: {acc_s}"
-                elif val == "not run" or not val:
-                    return '<span style="color:#8B8B8B; font-style:italic;">not run</span>'
-                return str(val)
-
-            deep_cell = _fmt_cell(fmt_data.get("deep_model"))
-            mlp_cell = _fmt_cell(fmt_data.get("handcrafted_mlp"))
-            gb_cell = _fmt_cell(fmt_data.get("gradient_boosting"))
-
-            comp_rows.append(f'''
-            <tr>
-                <td style="font-weight:600; color:#EDEDED;">{fmt_label}</td>
-                <td style="font-family:'JetBrains Mono'; font-size:12px;">{deep_cell}</td>
-                <td style="font-family:'JetBrains Mono'; font-size:12px;">{mlp_cell}</td>
-                <td style="font-family:'JetBrains Mono'; font-size:12px;">{gb_cell}</td>
-            </tr>
-            ''')
-
-        comp_table_html = f'''
-        <table class="glass-table">
-            <thead>
-                <tr>
-                    <th>Modality</th>
-                    <th>Deep Model (VaultBreakerDeepNet)</th>
-                    <th>Handcrafted MLP (UnifiedNet)</th>
-                    <th>Gradient Boosting (HistGBDT)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {''.join(comp_rows)}
-            </tbody>
-        </table>
-        '''
+        comp_table_html = build_comparison_table_html(comparison_data, is_smoke=comp_is_smoke)
         st.markdown(comp_table_html, unsafe_allow_html=True)
 
     # Bar chart of accuracy per hiding method

@@ -41,20 +41,40 @@ def glass_card(content_html: str, title: Optional[str] = None, subtitle: Optiona
     '''
 
 
-def stat_card(title: str, value: str, subtext: str = "", help_text: Optional[str] = None, icon_name: str = "activity") -> str:
-    """Renders a glass stat card with title, large value, and help tooltip."""
+def stat_card(
+    title: str,
+    value: str,
+    subtext: str = "",
+    help_text: Optional[str] = None,
+    icon_name: str = "activity",
+    items: Optional[List[Tuple[str, str]]] = None,
+) -> str:
+    """Renders a glass stat card with title, large value or small item list, and help tooltip."""
     icon_svg = get_svg_icon(icon_name, size=18, color=TEXT_SECONDARY)
     title_attr = f'title="{html.escape(help_text)}"' if help_text else ""
-    return f'''
-    <div class="stat-card" {title_attr}>
-        <div class="stat-header">
-            <span class="stat-title">{html.escape(title)}</span>
-            {icon_svg}
-        </div>
-        <div class="stat-value">{html.escape(value)}</div>
-        <div class="stat-subtext">{html.escape(subtext)}</div>
-    </div>
-    '''
+    
+    if items:
+        rows_html = "".join(
+            f'<div class="stat-item-row"><span class="stat-item-label">{html.escape(lbl)}</span>'
+            f'<span class="stat-item-val">{html.escape(val)}</span></div>'
+            for lbl, val in items
+        )
+        val_html = f'<div class="stat-items-list">{rows_html}</div>'
+    else:
+        val_html = f'<div class="stat-value">{html.escape(value)}</div>'
+
+    subtext_html = f'<div class="stat-subtext">{html.escape(subtext)}</div>' if subtext else ""
+    
+    return (
+        f'<div class="stat-card" {title_attr}>\n'
+        f'<div class="stat-header">\n'
+        f'<span class="stat-title">{html.escape(title)}</span>\n'
+        f'{icon_svg}\n'
+        f'</div>\n'
+        f'{val_html}\n'
+        f'{subtext_html}\n'
+        f'</div>'
+    )
 
 
 def verdict_badge(is_stego: bool, text: Optional[str] = None, is_unsupported: bool = False) -> str:
@@ -244,12 +264,20 @@ def render_entities_table(top_features: List[Tuple[str, float]]) -> str:
     '''
 
 
-def render_format_card(title: str, badge: str, m_dict: Optional[Dict[str, Any]], help_auc: str, help_acc: str) -> str:
+def render_format_card(
+    title: str,
+    badge: str,
+    m_dict: Optional[Dict[str, Any]],
+    help_auc: str,
+    help_acc: str,
+    is_smoke: bool = False
+) -> str:
     """Renders real benchmark card or 'Not available yet' empty state without numeric fallbacks."""
+    smoke_badge = '<div class="badge-smoke">Smoke test, not real performance</div>\n' if is_smoke else ""
     if m_dict and "roc_auc" in m_dict and "accuracy" in m_dict and "unique_sources" in m_dict:
         auc_str = f"{m_dict['roc_auc']:.4f}"
         acc_str = f"{m_dict['accuracy'] * 100:.1f}%"
-        src_str = f"{m_dict['unique_sources']} distinct source files"
+        src_str = f"{m_dict['unique_sources']:,} distinct source files"
         
         warning_html = ""
         n_src = m_dict.get("unique_sources")
@@ -257,28 +285,167 @@ def render_format_card(title: str, badge: str, m_dict: Optional[Dict[str, Any]],
             warning_html = '<div style="font-size: 10px; color: #E0B341; margin-top: 4px; font-weight: 500;">⚠️ too few samples to trust (&lt; 30 sources)</div>'
 
         body = (
-            f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin: 8px 0 2px 0;">'
-            f'<div title="{html.escape(help_auc)}"><div class="stat-value">{auc_str}</div><div style="font-size:11px; color:#8B8B8B;">Area under ROC curve</div></div>'
-            f'<div style="text-align:right;" title="{html.escape(help_acc)}"><div style="font-size:18px; font-weight:600; font-family:\'JetBrains Mono\'; color:#EDEDED;">{acc_str}</div><div style="font-size:11px; color:#8B8B8B;">Overall Accuracy</div></div>'
-            f'</div>'
-            f'<div style="font-size: 11px; color: #8B8B8B; margin-top: 6px;" title="Independent media sources in evaluation partition">{src_str}</div>'
+            f'{smoke_badge}'
+            f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin: 6px 0 2px 0;">\n'
+            f'<div title="{html.escape(help_auc)}"><div class="stat-value">{auc_str}</div><div style="font-size:11px; color:#8B8B8B;">Area under ROC curve</div></div>\n'
+            f'<div style="text-align:right;" title="{html.escape(help_acc)}"><div style="font-size:18px; font-weight:600; font-family:\'JetBrains Mono\'; color:#EDEDED;">{acc_str}</div><div style="font-size:11px; color:#8B8B8B;">Overall Accuracy</div></div>\n'
+            f'</div>\n'
+            f'<div style="font-size: 11px; color: #8B8B8B; margin-top: 4px;" title="Independent media sources in evaluation partition">{src_str}</div>\n'
             f'{warning_html}'
         )
     else:
         body = (
-            '<div style="margin: 14px 0 8px 0;">'
-            '<div style="font-size: 14px; font-weight: 600; color: #E0B341;">Not available yet</div>'
-            '<div style="font-size: 11px; color: #8B8B8B; margin-top: 4px;">Run make eval to compute test metrics</div>'
-            '</div>'
+            f'{smoke_badge}'
+            f'<div style="margin: 12px 0 6px 0;">\n'
+            f'<div style="font-size: 14px; font-weight: 600; color: #E0B341;">Not available yet</div>\n'
+            f'<div style="font-size: 11px; color: #8B8B8B; margin-top: 4px;">Run make eval to compute test metrics</div>\n'
+            f'</div>'
         )
 
     return (
-        f'<div class="stat-card">'
-        f'<div class="stat-header"><span class="stat-title">{html.escape(title)}</span>'
-        f'<span style="font-size:10px; font-weight:600; padding:2px 8px; border-radius:9999px; background:rgba(229,82,43,0.15); color:#E5522B; border:1px solid rgba(229,82,43,0.3);">{html.escape(badge)}</span></div>'
-        f'{body}'
+        f'<div class="stat-card">\n'
+        f'<div class="stat-header"><span class="stat-title">{html.escape(title)}</span>\n'
+        f'<span style="font-size:10px; font-weight:600; padding:2px 8px; border-radius:9999px; background:rgba(229,82,43,0.15); color:#E5522B; border:1px solid rgba(229,82,43,0.3);">{html.escape(badge)}</span></div>\n'
+        f'{body}\n'
         f'</div>'
     )
+
+
+def build_metrics_table_html(metrics_data: Dict[str, Any], is_smoke: bool = False) -> str:
+    """Build single dedented HTML table for evaluation test-set benchmark metrics.
+    Ensures zero lines start with 4+ spaces and no unrendered code blocks occur.
+    """
+    badge_html = '<div class="badge-smoke">Smoke test, not real performance</div>\n' if is_smoke else ""
+    per_fmt = metrics_data.get("per_format") or {}
+    overall_m = metrics_data.get("overall") or {}
+    
+    rows_data = [
+        ("Image", per_fmt.get("image") or {}),
+        ("Audio", per_fmt.get("audio") or {}),
+        ("Video", per_fmt.get("video") or {}),
+        ("Overall", overall_m),
+    ]
+    
+    lines = [
+        badge_html + '<table class="glass-table">',
+        '<thead>',
+        '<tr>',
+        '<th>Format</th>',
+        '<th>Accuracy</th>',
+        '<th>ROC-AUC (95% CI)</th>',
+        '<th>Recall @1% FPR</th>',
+        '<th>Recall @5% FPR</th>',
+        '<th>Recall @10% FPR</th>',
+        '<th>Test files</th>',
+        '</tr>',
+        '</thead>',
+        '<tbody>',
+    ]
+    
+    for name, m in rows_data:
+        trust_badge = ""
+        n_src = m.get("unique_sources")
+        if (n_src is not None and n_src < 30) or m.get("status") == "too few samples to trust" or m.get("warning") == "too few samples to trust":
+            trust_badge = ' <span style="font-size:10px; color:#E0B341; padding:2px 6px; border-radius:4px; background:rgba(224,179,65,0.15); border:1px solid rgba(224,179,65,0.3); margin-left:6px; font-weight:normal;">too few samples to trust</span>'
+
+        raw_acc = m.get("accuracy")
+        acc = f"{float(raw_acc) * 100:.1f}%" if raw_acc is not None else "N/A"
+        
+        raw_auc = m.get("roc_auc")
+        auc = f"{float(raw_auc):.4f}" if raw_auc is not None else "N/A"
+        ci = m.get("roc_auc_ci95")
+        ci_str = f" [{ci[0]:.3f}, {ci[1]:.3f}]" if isinstance(ci, list) and len(ci) == 2 else ""
+        auc_cell = f"{auc}<span style='font-size:11px; color:#8B8B8B;'>{ci_str}</span>" if raw_auc is not None else "N/A"
+
+        rfpr = m.get("recalls_at_fpr") or {}
+        r1 = rfpr.get("recall_at_1pct_fpr", m.get("recall_1pct_fpr"))
+        r1_str = f"{float(r1) * 100:.1f}%" if r1 is not None else "N/A"
+        
+        r5 = rfpr.get("recall_at_5pct_fpr", m.get("recall_5pct_fpr"))
+        r5_str = f"{float(r5) * 100:.1f}%" if r5 is not None else "N/A"
+        
+        r10 = rfpr.get("recall_at_10pct_fpr", m.get("recall_10pct_fpr"))
+        r10_str = f"{float(r10) * 100:.1f}%" if r10 is not None else "N/A"
+
+        n_files = m.get("sample_count")
+        if n_files is not None and n_src is not None:
+            src_str = f"{n_files:,} files ({n_src:,} sources)"
+        elif n_files is not None:
+            src_str = f"{n_files:,} files"
+        else:
+            src_str = "N/A"
+
+        lines.append('<tr>')
+        lines.append(f'<td style="font-weight:600; color:#EDEDED;">{name}{trust_badge}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; font-weight:600; color:#EDEDED;">{acc}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; color:#E0B341;">{auc_cell}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; color:#3FB67A;">{r1_str}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; color:#3FB67A;">{r5_str}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; color:#3FB67A;">{r10_str}</td>')
+        lines.append(f'<td style="color:#B5B5B5; font-size:12px;">{src_str}</td>')
+        lines.append('</tr>')
+
+    lines.append('</tbody>')
+    lines.append('</table>')
+    return "\n".join(lines)
+
+
+def build_comparison_table_html(comparison_data: Dict[str, Any], is_smoke: bool = False) -> str:
+    """Build single dedented HTML table for side-by-side model comparison on identical test split."""
+    badge_html = '<div class="badge-smoke">Smoke test, not real performance</div>\n' if is_smoke else ""
+    comp_dict = comparison_data.get("comparison") if isinstance(comparison_data.get("comparison"), dict) else comparison_data
+    
+    lines = [
+        badge_html + '<table class="glass-table">',
+        '<thead>',
+        '<tr>',
+        '<th>Format</th>',
+        '<th>Deep model</th>',
+        '<th>Handcrafted MLP</th>',
+        '<th>Gradient boosting</th>',
+        '</tr>',
+        '</thead>',
+        '<tbody>',
+    ]
+
+    for fmt_key in ["image", "audio", "video"]:
+        fmt_data = comp_dict.get(fmt_key, {})
+        fmt_label = fmt_key.capitalize()
+
+        def _fmt_cell(val):
+            if isinstance(val, dict):
+                auc_val = val.get("roc_auc")
+                r5_val = val.get("recall_at_5pct_fpr")
+                acc_val = val.get("accuracy")
+                auc_s = f"{float(auc_val):.4f}" if auc_val is not None else "N/A"
+                r5_s = f"{float(r5_val) * 100:.1f}%" if r5_val is not None else "N/A"
+                acc_s = f"{float(acc_val) * 100:.1f}%" if acc_val is not None else "N/A"
+                return (
+                    f'<div style="font-weight:600; color:var(--text-primary);">'
+                    f'ROC-AUC: <span style="color:var(--status-amber);">{auc_s}</span>'
+                    f'</div>'
+                    f'<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">'
+                    f'Acc: {acc_s} · R@5%: {r5_s}'
+                    f'</div>'
+                )
+            elif val == "not run" or not val:
+                return '<span style="color:#8B8B8B; font-style:italic;">not run</span>'
+            return str(val)
+
+        deep_cell = _fmt_cell(fmt_data.get("deep_model"))
+        mlp_cell = _fmt_cell(fmt_data.get("handcrafted_mlp"))
+        gb_cell = _fmt_cell(fmt_data.get("gradient_boosting"))
+
+        lines.append('<tr>')
+        lines.append(f'<td style="font-weight:600; color:#EDEDED;">{fmt_label}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; font-size:12px;">{deep_cell}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; font-size:12px;">{mlp_cell}</td>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; font-size:12px;">{gb_cell}</td>')
+        lines.append('</tr>')
+
+    lines.append('</tbody>')
+    lines.append('</table>')
+    return "\n".join(lines)
 
 
 def load_real_metrics(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
@@ -315,6 +482,43 @@ def load_real_metrics(results_path: Optional[Path] = None) -> Optional[Dict[str,
     return None
 
 
+def load_display_metrics(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Load test metrics for UI presentation.
+    First checks for real training runs (laptop/gpu profile, is_smoke=False).
+    If none found, checks for smoke runs and returns them marked with is_smoke=True.
+    """
+    real = load_real_metrics(results_path)
+    if real is not None:
+        real["is_smoke"] = False
+        return real
+
+    # Check for smoke run to allow displaying smoke badge
+    import json
+    results_dir = Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS"
+    if results_path:
+        candidates = [Path(results_path)]
+    else:
+        candidates = [
+            results_dir / "metrics_deep.json",
+            results_dir / "metrics.json",
+            results_dir / "smoke" / "metrics_deep.json",
+            results_dir / "smoke" / "metrics.json",
+        ]
+
+    for p in candidates:
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and data:
+                        is_smoke = bool(data.get("is_smoke")) or str(data.get("profile", "")).lower() == "smoke" or not data.get("profile")
+                        data["is_smoke"] = is_smoke
+                        return data
+            except Exception:
+                continue
+    return None
+
+
 def load_comparison_results(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """Load side-by-side comparison results from docs/RESULTS/comparison.json.
     Strictly rejects any smoke run comparison file.
@@ -330,6 +534,32 @@ def load_comparison_results(results_path: Optional[Path] = None) -> Optional[Dic
                 if isinstance(data, dict) and data:
                     if data.get("is_smoke") is True or str(data.get("profile", "")).lower() == "smoke":
                         return None
+                    return data
+        except Exception:
+            pass
+    return None
+
+
+def load_display_comparison_results(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Load side-by-side comparison results for UI presentation."""
+    real = load_comparison_results(results_path)
+    if real is not None:
+        real["is_smoke"] = False
+        return real
+
+    import json
+    results_dir = Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS"
+    c_path = Path(results_path) if results_path else (results_dir / "comparison.json")
+    if not c_path.exists():
+        c_path = results_dir / "smoke" / "comparison.json"
+        
+    if c_path.exists():
+        try:
+            with open(c_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and data:
+                    is_smoke = bool(data.get("is_smoke")) or str(data.get("profile", "")).lower() == "smoke" or not data.get("profile")
+                    data["is_smoke"] = is_smoke
                     return data
         except Exception:
             pass
@@ -392,3 +622,78 @@ def create_activity_trend_chart(scans: List[Dict[str, Any]], threshold: Optional
         showlegend=False
     )
     return fig
+
+
+def get_active_checkpoint_rows(root_dir: Optional[Path] = None) -> Tuple[List[Dict[str, Any]], float, Dict[str, Any]]:
+    """Load actual active model details per format from model_selection.json, calibrator, and model files.
+    Returns:
+        (rows, target_fpr, cal_per_fmt_dict)
+    """
+    import json
+    from datetime import datetime
+    base_dir = root_dir if root_dir else (Path(__file__).resolve().parent.parent.parent)
+    models_dir = base_dir / "models_saved"
+    selection_file = models_dir / "model_selection.json"
+    calibrator_file = models_dir / "calibrator_per_format.json"
+    
+    selection_data = {}
+    if selection_file.exists():
+        try:
+            with open(selection_file, "r", encoding="utf-8") as f:
+                selection_data = json.load(f)
+        except Exception:
+            pass
+            
+    cal_data = {}
+    if calibrator_file.exists():
+        try:
+            with open(calibrator_file, "r", encoding="utf-8") as f:
+                cal_data = json.load(f)
+        except Exception:
+            pass
+
+    formats_info = selection_data.get("formats", {})
+    rows = []
+    
+    # Target FPR dynamically from calibrator or per-format calibration (default 0.05)
+    target_fpr = 0.05
+    
+    for fmt in ["image", "audio", "video"]:
+        fmt_sel = formats_info.get(fmt, {})
+        sel_key = fmt_sel.get("selected_model", "deep_model")
+        
+        # Determine actual file
+        if sel_key == "deep_model":
+            model_file = models_dir / "deep_model.pt"
+            display_model = "deep_model.pt"
+        elif sel_key == "gradient_boosting":
+            model_file = models_dir / f"baseline_{fmt}_GradientBoosting.joblib"
+            display_model = model_file.name if model_file.exists() else f"baseline_{fmt}_GBDT.joblib"
+        elif sel_key == "handcrafted_mlp":
+            model_file = models_dir / "unified_model.pt"
+            display_model = "unified_model.pt"
+        else:
+            model_file = models_dir / "deep_model.pt"
+            display_model = model_file.name
+
+        # File date
+        if model_file.exists():
+            mod_dt = datetime.fromtimestamp(model_file.stat().st_mtime).strftime("%Y-%m-%d")
+        else:
+            mod_dt = str(selection_data.get("timestamp", "N/A"))[:10]
+
+        # Threshold from calibrator
+        fmt_cal = cal_data.get(fmt, {})
+        thresh = fmt_cal.get("decision_threshold")
+        if thresh is None:
+            thresh = 0.5
+        if "target_fpr" in fmt_cal:
+            target_fpr = fmt_cal["target_fpr"]
+
+        rows.append({
+            "format": fmt.capitalize(),
+            "model": display_model,
+            "threshold": float(thresh),
+            "date": mod_dt,
+        })
+    return rows, target_fpr, cal_data

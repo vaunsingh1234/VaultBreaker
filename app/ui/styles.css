@@ -148,11 +148,15 @@ p, span, label, div {
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-card);
     box-shadow: var(--glass-shadow), var(--glass-highlight);
-    padding: 18px;
-    height: 100%;
+    padding: 16px 18px;
+    height: 160px;
+    min-height: 160px;
+    max-height: 160px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    overflow: hidden;
     transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
@@ -165,7 +169,7 @@ p, span, label, div {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 
 .stat-title {
@@ -181,13 +185,43 @@ p, span, label, div {
     font-weight: 600;
     font-family: 'JetBrains Mono', monospace;
     color: var(--text-primary);
+    margin: 2px 0;
+}
+
+.stat-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
     margin: 4px 0;
+}
+
+.stat-item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.stat-item-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.stat-item-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 12px;
 }
 
 .stat-subtext {
     font-size: 11px;
     color: var(--text-muted);
-    line-height: 1.4;
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* --- Left Sidebar (Glass with Orange Indicator Marker) --- */
@@ -196,12 +230,12 @@ section[data-testid="stSidebar"] {
     backdrop-filter: var(--sidebar-blur) !important;
     -webkit-backdrop-filter: var(--sidebar-blur) !important;
     border-right: 1px solid var(--glass-border) !important;
-    width: 250px !important;
-    min-width: 250px !important;
+    width: 330px !important;
+    min-width: 330px !important;
 }
 
 section[data-testid="stSidebar"] > div {
-    padding: 1.5rem 1rem !important;
+    padding: 1.25rem 0.75rem !important;
 }
 
 /* Sidebar Brand Header */
@@ -550,6 +584,71 @@ div[data-testid="stExpander"] {
 
 .glass-table tr:hover td {
     background: rgba(255, 255, 255, 0.02);
+}
+
+/* Mini Table for Sidebar and Compact Cards */
+.glass-mini-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+    margin: 6px 0;
+}
+
+.glass-mini-table th {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    padding: 4px 4px;
+    border-bottom: 1px solid var(--glass-border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.glass-mini-table td {
+    padding: 5px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    font-size: 10px;
+    vertical-align: middle;
+}
+
+.glass-mini-table tr:last-child td {
+    border-bottom: none;
+}
+
+.glass-mini-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Smoke Warning Badges */
+.badge-smoke {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #E0B341;
+    background: rgba(224, 179, 65, 0.14);
+    border: 1px solid rgba(224, 179, 65, 0.35);
+    border-radius: var(--radius-sm);
+    padding: 3px 8px;
+    margin-bottom: 8px;
+}
+
+.badge-smoke-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(224, 179, 65, 0.12);
+    border: 1px solid rgba(224, 179, 65, 0.35);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    color: #F3D279;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 14px;
 }
 
 /* Calm Banner */
