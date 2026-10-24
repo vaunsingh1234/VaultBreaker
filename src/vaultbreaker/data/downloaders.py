@@ -162,11 +162,21 @@ def process_user_images(
     std_dir = raw_images_dir / ".standardized"
     std_dir.mkdir(parents=True, exist_ok=True)
 
-    candidates = [
-        p for p in raw_images_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_img_")
-    ]
-    candidates.sort()
+    user_media_dirs = [raw_images_dir]
+    user_media_root = Path("data/user_media")
+    if user_media_root.exists():
+        user_media_dirs.append(user_media_root)
+        if (user_media_root / "images").exists():
+            user_media_dirs.append(user_media_root / "images")
+
+    candidates = []
+    for d in user_media_dirs:
+        if d.exists():
+            candidates.extend([
+                p for p in d.iterdir()
+                if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_img_")
+            ])
+    candidates = sorted(list(set(candidates)))
 
     found = len(candidates)
     used = 0
@@ -230,11 +240,21 @@ def process_user_audio(
     std_dir = raw_audio_dir / ".standardized"
     std_dir.mkdir(parents=True, exist_ok=True)
 
-    candidates = [
-        p for p in raw_audio_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_aud_")
-    ]
-    candidates.sort()
+    user_media_dirs = [raw_audio_dir]
+    user_media_root = Path("data/user_media")
+    if user_media_root.exists():
+        user_media_dirs.append(user_media_root)
+        if (user_media_root / "audio").exists():
+            user_media_dirs.append(user_media_root / "audio")
+
+    candidates = []
+    for d in user_media_dirs:
+        if d.exists():
+            candidates.extend([
+                p for p in d.iterdir()
+                if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_aud_")
+            ])
+    candidates = sorted(list(set(candidates)))
 
     found = len(candidates)
     used = 0
@@ -329,11 +349,21 @@ def process_user_videos(
     std_dir = raw_video_dir / ".standardized"
     std_dir.mkdir(parents=True, exist_ok=True)
 
-    candidates = [
-        p for p in raw_video_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_vid_")
-    ]
-    candidates.sort()
+    user_media_dirs = [raw_video_dir]
+    user_media_root = Path("data/user_media")
+    if user_media_root.exists():
+        user_media_dirs.append(user_media_root)
+        if (user_media_root / "video").exists():
+            user_media_dirs.append(user_media_root / "video")
+
+    candidates = []
+    for d in user_media_dirs:
+        if d.exists():
+            candidates.extend([
+                p for p in d.iterdir()
+                if p.is_file() and p.suffix.lower() in valid_exts and not p.name.startswith("cover_vid_")
+            ])
+    candidates = sorted(list(set(candidates)))
 
     found = len(candidates)
     used = 0

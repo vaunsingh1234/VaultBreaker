@@ -17,7 +17,13 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 APP_DIR = ROOT_DIR / "app"
 
 DELETED_CHART_NAMES = {"create_radar_chart", "create_radial_chart"}
-FORBIDDEN_DISPLAY_STRINGS = ["0.8990", "v1.0.0", "128-d"]
+FORBIDDEN_DISPLAY_STRINGS = [
+    "0.8990", "0.9372", "0.6044", "0.9972", "0.8002",
+    "26.5%", "45.6%", "v1.0.0", "128-d"
+]
+FORBIDDEN_EVALUATE_FALLBACKS = [
+    "0.88", "0.80", "0.18", "0.85", "0.82", "0.89", "0.78", "0.75", "0.81"
+]
 
 def _rel_path(path: Path) -> str:
     try:
@@ -94,6 +100,31 @@ def check_forbidden_patterns(file_path: Path):
 
     return errors
 
+def check_evaluate_script(eval_path: Path):
+    errors = []
+    if not eval_path.exists():
+        return errors
+    disp_name = _rel_path(eval_path)
+    with open(eval_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    try:
+        tree = ast.parse(content, filename=str(eval_path))
+    except Exception as e:
+        return [f"AST parse error in {eval_path.name}: {e}"]
+
+    # Inspect build_side_by_side_comparison
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "build_side_by_side_comparison":
+            for child in ast.walk(node):
+                if isinstance(child, ast.Constant) and isinstance(child.value, (int, float)):
+                    # Allow 0, 1, 4 (rounding digits), but no hardcoded metric numbers
+                    if child.value not in (0, 1, 4, 0.0, 1.0):
+                        errors.append(
+                            f"{disp_name}: build_side_by_side_comparison contains hardcoded numeric constant {child.value}"
+                        )
+    return errors
+
 def main():
     py_files = list(APP_DIR.rglob("*.py"))
     all_errors = []
@@ -101,6 +132,9 @@ def main():
     for pf in py_files:
         all_errors.extend(check_ast_fallbacks(pf))
         all_errors.extend(check_forbidden_patterns(pf))
+
+    eval_script = ROOT_DIR / "scripts" / "evaluate.py"
+    all_errors.extend(check_evaluate_script(eval_script))
 
     if all_errors:
         print(f"❌ UI Numbers Check Failed ({len(all_errors)} violations found):")

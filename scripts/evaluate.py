@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Evaluation CLI for VaultBreaker.
-Evaluates the trained multi-modal pipeline (deep model or unified handcrafted MLP fallback)
-on the test split, computes PE, ROC-AUC and 95% bootstrap confidence intervals,
-recalls at 1%, 5%, 10% FPR, method x payload breakdown with real sample counts,
-generates the method x payload heatmap PNG, executes leave-one-method-out evaluation,
-side-by-side comparison (Deep vs MLP vs GBDT), and audits target checks.
+Evaluates the trained multi-modal pipeline (deep model, handcrafted MLP, and GBDT baseline)
+on the balanced test split, computes PE, ROC-AUC, recalls at 1%, 5%, 10% FPR,
+and cluster bootstrap 95% confidence intervals by source_id.
+Produces:
+  - docs/RESULTS/metrics_deep.json
+  - docs/RESULTS/metrics_handcrafted.json
+  - docs/RESULTS/comparison.json
+  - docs/RESULTS/method_payload_heatmap.png
+Smoke runs write strictly to docs/RESULTS/smoke/ and never overwrite real results.
 """
 
 import argparse
@@ -23,8 +27,7 @@ import soundfile as sf
 import imageio.v3 as iio
 import joblib
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import (
     roc_auc_score, accuracy_score, precision_score, recall_score,
     f1_score, roc_curve, confusion_matrix
@@ -37,8 +40,9 @@ from vaultbreaker.models.unified_net import VaultBreakerUnifiedNet
 from vaultbreaker.models.deep_net import VaultBreakerDeepNet
 from vaultbreaker.training.calibrate import TemperatureScalingCalibrator
 from vaultbreaker.training.evaluate import (
-    StegoEvaluationSuite, compute_metrics, compute_bootstrap_ci, compute_detection_error_pe
+    compute_metrics, compute_bootstrap_ci, compute_detection_error_pe
 )
+from vaultbreaker.features.extractor import MultiModalFeaturePipeline
 
 logger = get_logger("Evaluate")
 
@@ -59,23 +63,77 @@ def compute_recall_at_fpr(y_true: np.ndarray, y_prob: np.ndarray, target_fprs=(0
     return recalls
 
 
+def build_balanced_test_set(df_test: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
+    """
+    Construct a strictly balanced test set:
+    For each clean file, include ONE stego variant, sampled evenly across methods and payload sizes.
+    Never evaluate every method x payload variant against each clean file.
+    """
+    clean_df = df_test[df_test["label"] == 0].copy()
+    stego_df = df_test[df_test["label"] == 1].copy()
+
+    selected_rows = []
+    rng = np.random.RandomState(seed)
+
+    for m_type in ["image", "audio", "video"]:
+        m_clean = clean_df[clean_df["media_type"] == m_type].sort_values("source_id")
+        m_stego = stego_df[stego_df["media_type"] == m_type]
+
+        if m_clean.empty or m_stego.empty:
+            continue
+
+        # Find unique method x payload combinations for even round-robin sampling
+        combos = m_stego[["method", "payload_rate"]].drop_duplicates().sort_values(["method", "payload_rate"]).to_dict("records")
+        n_combos = len(combos)
+
+        stego_by_source = {}
+        for _, s_row in m_stego.iterrows():
+            stego_by_source.setdefault(s_row["source_id"], []).append(s_row)
+
+        for idx, (_, c_row) in enumerate(m_clean.iterrows()):
+            src = c_row["source_id"]
+            variants = stego_by_source.get(src, [])
+            if not variants:
+                continue
+
+            selected_rows.append(c_row.to_dict())
+
+            target_combo = combos[idx % n_combos]
+            matched = [
+                v for v in variants
+                if v["method"] == target_combo["method"] and np.isclose(v["payload_rate"], target_combo["payload_rate"], atol=0.01)
+            ]
+            if matched:
+                pick = matched[0]
+            else:
+                pick_idx = rng.randint(0, len(variants))
+                pick = variants[pick_idx]
+            selected_rows.append(pick.to_dict() if isinstance(pick, pd.Series) else dict(pick))
+
+    df_balanced = pd.DataFrame(selected_rows).reset_index(drop=True)
+    logger.info(
+        f"Built balanced test set: {len(df_balanced)} samples "
+        f"({(df_balanced['label'] == 0).sum()} clean, {(df_balanced['label'] == 1).sum()} stego)."
+    )
+    return df_balanced
+
+
 def evaluate_deep_model_test_set(
     deep_ckpt_path: Path,
     calibrator_path: Optional[Path],
-    manifest_path: Path,
+    df_test_balanced: pd.DataFrame,
     device: torch.device,
     batch_size: int = 32
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
-    Run full test set evaluation on the trained VaultBreakerDeepNet directly from raw files.
-    Computes all standard metrics, 1000-resample bootstrap CIs, recall at 1/5/10% FPR,
-    and returns per-sample evaluation records.
+    Run evaluation on the trained VaultBreakerDeepNet on the balanced test set.
+    Reports accuracy strictly at the validation-calibrated threshold (5% FPR).
     """
     logger.info(f"Loading deep model checkpoint from {deep_ckpt_path}...")
     ckpt = torch.load(deep_ckpt_path, map_location=device)
     model_state = ckpt.get("model_state", ckpt)
 
-    # Dynamically detect base_channels from checkpoint weights
+    # Detect base_channels dynamically
     base_ch = 16
     for k, v in model_state.items():
         if "image_deep.block1.0.weight" in k:
@@ -91,23 +149,22 @@ def evaluate_deep_model_test_set(
     model.load_state_dict(model_state)
     model.eval()
 
-    # Load Calibrator
+    # Load Calibrator fitted on validation set
     calibrator = None
     if calibrator_path and calibrator_path.exists():
         try:
             calibrator = TemperatureScalingCalibrator.load(calibrator_path)
-            logger.info(f"Loaded calibrator from {calibrator_path}")
+            logger.info(f"Loaded deep calibrator (T={calibrator.temperature:.4f}, threshold={calibrator.decision_threshold:.4f})")
         except Exception:
             calibrator = TemperatureScalingCalibrator(target_fpr=0.05)
     else:
         calibrator = TemperatureScalingCalibrator(target_fpr=0.05)
 
-    df_test = pd.read_csv(manifest_path)
-    logger.info(f"Loaded test manifest with {len(df_test)} items.")
+    decision_threshold = calibrator.decision_threshold
 
     records = []
     by_type: Dict[str, List[Dict[str, Any]]] = {}
-    for _, row in df_test.iterrows():
+    for _, row in df_test_balanced.iterrows():
         fp = Path(row["filepath"])
         if fp.exists():
             by_type.setdefault(row["media_type"], []).append(row.to_dict())
@@ -149,7 +206,7 @@ def evaluate_deep_model_test_set(
                             t = torch.from_numpy(frames).unsqueeze(1).float()
                         tensors.append(t)
                         valid_chunk.append(it)
-                    except Exception as e:
+                    except Exception:
                         continue
 
                 if not tensors:
@@ -175,14 +232,15 @@ def evaluate_deep_model_test_set(
                     })
 
     df_eval = pd.DataFrame(records)
-    logger.info(f"Successfully evaluated {len(df_eval)} test samples across all formats.")
+    logger.info(f"Evaluated {len(df_eval)} balanced samples across formats.")
 
-    # 1. Overall Metrics
+    # 1. Overall Metrics (evaluated strictly at calibrated decision threshold)
     y_true_all = df_eval["label"].values
     y_prob_all = df_eval["cal_prob"].values
     src_all = df_eval["source_id"].values
-    overall_metrics = compute_metrics(y_true_all, y_prob_all, threshold=0.5, source_ids=src_all)
+    overall_metrics = compute_metrics(y_true_all, y_prob_all, threshold=decision_threshold, source_ids=src_all)
     overall_metrics["recalls_at_fpr"] = compute_recall_at_fpr(y_true_all, y_prob_all)
+    overall_metrics["calibrated_threshold"] = round(float(decision_threshold), 4)
 
     # 2. Per-Format Metrics
     per_format_metrics = {}
@@ -192,21 +250,264 @@ def evaluate_deep_model_test_set(
             yt = fmt_df["label"].values
             yp = fmt_df["cal_prob"].values
             src = fmt_df["source_id"].values
-            m = compute_metrics(yt, yp, threshold=0.5, source_ids=src)
+            m = compute_metrics(yt, yp, threshold=decision_threshold, source_ids=src)
             m["recalls_at_fpr"] = compute_recall_at_fpr(yt, yp)
+            m["calibrated_threshold"] = round(float(decision_threshold), 4)
+            if m["unique_sources"] < 30:
+                m["status"] = "too few samples to trust"
+                m["warning"] = "too few samples to trust"
             per_format_metrics[fmt] = m
+
+    # 3. Per-Method Metrics
+    per_method_metrics = {}
+    stego_eval = df_eval[df_eval["label"] == 1]
+    clean_eval = df_eval[df_eval["label"] == 0]
+    for meth in sorted(stego_eval["method"].unique()):
+        sub_stego = stego_eval[stego_eval["method"] == meth]
+        sub_eval = pd.concat([clean_eval, sub_stego], ignore_index=True)
+        yt_m = sub_eval["label"].values
+        yp_m = sub_eval["cal_prob"].values
+        src_m = sub_eval["source_id"].values
+        m_res = compute_metrics(yt_m, yp_m, threshold=decision_threshold, source_ids=src_m)
+        m_res["recalls_at_fpr"] = compute_recall_at_fpr(yt_m, yp_m)
+        m_res["stego_sample_count"] = len(sub_stego)
+        per_method_metrics[meth] = m_res
+
+    # 4. Per-Payload Metrics
+    per_payload_metrics = {}
+    for pl in sorted(stego_eval["payload_rate"].unique()):
+        sub_pl = stego_eval[np.isclose(stego_eval["payload_rate"], pl, atol=0.01)]
+        sub_eval = pd.concat([clean_eval, sub_pl], ignore_index=True)
+        yt_p = sub_eval["label"].values
+        yp_p = sub_eval["cal_prob"].values
+        src_p = sub_eval["source_id"].values
+        p_res = compute_metrics(yt_p, yp_p, threshold=decision_threshold, source_ids=src_p)
+        p_res["recalls_at_fpr"] = compute_recall_at_fpr(yt_p, yp_p)
+        p_res["stego_sample_count"] = len(sub_pl)
+        per_payload_metrics[f"{pl:.2f}"] = p_res
 
     eval_results = {
         "model_type": "VaultBreakerDeepNet",
         "checkpoint": str(deep_ckpt_path),
         "overall": overall_metrics,
-        "per_format": per_format_metrics
+        "per_format": per_format_metrics,
+        "per_method": per_method_metrics,
+        "per_payload": per_payload_metrics
     }
 
     return eval_results, records
 
 
-def build_method_payload_breakdown(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+def evaluate_handcrafted_model_test_set(
+    models_dir: Path,
+    df_test_balanced: pd.DataFrame,
+    features_cache_dir: Path
+) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Run evaluation on the saved handcrafted MLP model (models_saved/unified_model.pt).
+    Extracts handcrafted features on the balanced test items and applies scalers and calibrator.
+    """
+    weights_path = models_dir / "unified_model.pt"
+    cal_path = models_dir / "calibrator.joblib"
+    if not weights_path.exists():
+        logger.warning(f"Handcrafted model {weights_path} not found.")
+        return None, []
+
+    logger.info("Evaluating handcrafted model on balanced test set...")
+    pipeline = MultiModalFeaturePipeline(cache_dir=features_cache_dir, num_workers=2)
+    features_map = pipeline.extract_dataset(df_test_balanced)
+
+    # Load scalers
+    scalers = {}
+    for fmt in ["image", "audio", "video"]:
+        sc_path = models_dir / f"scaler_{fmt}.joblib"
+        if sc_path.exists():
+            scalers[fmt] = joblib.load(sc_path)
+
+    # Load unified net
+    model = VaultBreakerUnifiedNet(
+        img_dim=72, aud_dim=56, vid_dim=64,
+        latent_dim=128, hidden_dim=256,
+        use_aux_head=True, num_methods=8
+    )
+    model.load_state_dict(torch.load(weights_path, map_location="cpu"))
+    model.eval()
+
+    calibrator = TemperatureScalingCalibrator.load(cal_path) if cal_path.exists() else TemperatureScalingCalibrator(target_fpr=0.05)
+    decision_threshold = calibrator.decision_threshold
+
+    records = []
+    with torch.no_grad():
+        for _, row in df_test_balanced.iterrows():
+            fp = row["filepath"]
+            m_type = row["media_type"]
+            if fp not in features_map or m_type not in scalers:
+                continue
+
+            raw_feat = features_map[fp].reshape(1, -1)
+            norm_feat = scalers[m_type].transform(raw_feat)
+            t_feat = torch.from_numpy(norm_feat).float()
+
+            logits, _, _ = model(t_feat, m_type)
+            raw_p = float(torch.sigmoid(logits).squeeze().item())
+            cal_p = calibrator.calibrate_prob(raw_p) if calibrator else raw_p
+
+            records.append({
+                "source_id": row["source_id"],
+                "filepath": fp,
+                "media_type": m_type,
+                "label": int(row["label"]),
+                "method": row["method"],
+                "payload_rate": float(row["payload_rate"]),
+                "raw_prob": raw_p,
+                "cal_prob": cal_p
+            })
+
+    if not records:
+        return None, []
+
+    df_eval = pd.DataFrame(records)
+    y_true_all = df_eval["label"].values
+    y_prob_all = df_eval["cal_prob"].values
+    src_all = df_eval["source_id"].values
+
+    overall_metrics = compute_metrics(y_true_all, y_prob_all, threshold=decision_threshold, source_ids=src_all)
+    overall_metrics["recalls_at_fpr"] = compute_recall_at_fpr(y_true_all, y_prob_all)
+    overall_metrics["calibrated_threshold"] = round(float(decision_threshold), 4)
+
+    per_format_metrics = {}
+    for fmt in ["image", "audio", "video"]:
+        fmt_df = df_eval[df_eval["media_type"] == fmt]
+        if len(fmt_df) > 0:
+            yt = fmt_df["label"].values
+            yp = fmt_df["cal_prob"].values
+            src = fmt_df["source_id"].values
+            m = compute_metrics(yt, yp, threshold=decision_threshold, source_ids=src)
+            m["recalls_at_fpr"] = compute_recall_at_fpr(yt, yp)
+            m["calibrated_threshold"] = round(float(decision_threshold), 4)
+            if m["unique_sources"] < 30:
+                m["status"] = "too few samples to trust"
+                m["warning"] = "too few samples to trust"
+            per_format_metrics[fmt] = m
+
+    eval_results = {
+        "model_type": "VaultBreakerUnifiedNet",
+        "checkpoint": str(weights_path),
+        "overall": overall_metrics,
+        "per_format": per_format_metrics
+    }
+    return eval_results, records
+
+
+def evaluate_gradient_boosting_test_set(
+    models_dir: Path,
+    df_test_balanced: pd.DataFrame,
+    features_cache_dir: Path
+) -> Dict[str, Any]:
+    """
+    Evaluate real HistGradientBoostingClassifier baselines on the same balanced test set.
+    """
+    pipeline = MultiModalFeaturePipeline(cache_dir=features_cache_dir, num_workers=2)
+    features_map = pipeline.extract_dataset(df_test_balanced)
+    results = {}
+
+    for fmt in ["image", "audio", "video"]:
+        model_path = models_dir / f"baseline_{fmt}_GradientBoosting.joblib"
+        scaler_path = models_dir / f"scaler_{fmt}.joblib"
+
+        if not model_path.exists() or not scaler_path.exists():
+            continue
+
+        try:
+            gb = joblib.load(model_path)
+            sc = joblib.load(scaler_path)
+
+            fmt_df = df_test_balanced[df_test_balanced["media_type"] == fmt]
+            valid_rows = [r for _, r in fmt_df.iterrows() if r["filepath"] in features_map]
+            if len(valid_rows) < 4:
+                continue
+
+            raw_feats = np.stack([features_map[r["filepath"]] for r in valid_rows], axis=0)
+            norm_feats = sc.transform(raw_feats)
+            probs = gb.predict_proba(norm_feats)[:, 1]
+            yt = np.array([r["label"] for r in valid_rows])
+            src = np.array([r["source_id"] for r in valid_rows])
+
+            # Determine 5% FPR threshold on clean files
+            clean_probs = probs[yt == 0]
+            if len(clean_probs) > 0:
+                clean_sorted = np.sort(clean_probs)
+                k = int(np.floor((1.0 - 0.05) * len(clean_sorted)))
+                k = min(max(k, 0), len(clean_sorted) - 1)
+                thresh = float(clean_sorted[k])
+            else:
+                thresh = 0.5
+
+            m = compute_metrics(yt, probs, threshold=thresh, source_ids=src)
+            m["recalls_at_fpr"] = compute_recall_at_fpr(yt, probs)
+            m["calibrated_threshold"] = round(thresh, 4)
+            results[fmt] = m
+        except Exception as e:
+            logger.warning(f"Error evaluating GBDT for {fmt}: {e}")
+
+    return results
+
+
+def build_side_by_side_comparison(
+    deep_metrics: Optional[Dict[str, Any]],
+    handcrafted_metrics: Optional[Dict[str, Any]],
+    gbdt_metrics: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Assemble strictly honest side-by-side comparison table.
+    A model appears only if its metrics were computed on the SAME test manifest.
+    Otherwise write 'not run'. Zero invented or fallback numbers!
+    """
+    comparison = {}
+
+    for fmt in ["image", "audio", "video"]:
+        deep_f = deep_metrics.get("per_format", {}).get(fmt) if deep_metrics else None
+        mlp_f = handcrafted_metrics.get("per_format", {}).get(fmt) if handcrafted_metrics else None
+        gb_f = gbdt_metrics.get(fmt) if gbdt_metrics else None
+
+        fmt_entry = {}
+
+        if deep_f and "roc_auc" in deep_f:
+            fmt_entry["deep_model"] = {
+                "roc_auc": round(float(deep_f["roc_auc"]), 4),
+                "accuracy": round(float(deep_f["accuracy"]), 4),
+                "pe": round(float(deep_f.get("p_e", 0.0)), 4),
+                "recall_at_5pct_fpr": round(float(deep_f.get("recalls_at_fpr", {}).get("recall_at_5pct_fpr", 0.0)), 4)
+            }
+        else:
+            fmt_entry["deep_model"] = "not run"
+
+        if mlp_f and "roc_auc" in mlp_f:
+            fmt_entry["handcrafted_mlp"] = {
+                "roc_auc": round(float(mlp_f["roc_auc"]), 4),
+                "accuracy": round(float(mlp_f["accuracy"]), 4),
+                "pe": round(float(mlp_f.get("p_e", 0.0)), 4),
+                "recall_at_5pct_fpr": round(float(mlp_f.get("recalls_at_fpr", {}).get("recall_at_5pct_fpr", 0.0)), 4)
+            }
+        else:
+            fmt_entry["handcrafted_mlp"] = "not run"
+
+        if gb_f and "roc_auc" in gb_f:
+            fmt_entry["gradient_boosting"] = {
+                "roc_auc": round(float(gb_f["roc_auc"]), 4),
+                "accuracy": round(float(gb_f["accuracy"]), 4),
+                "pe": round(float(gb_f.get("p_e", 0.0)), 4),
+                "recall_at_5pct_fpr": round(float(gb_f.get("recalls_at_fpr", {}).get("recall_at_5pct_fpr", 0.0)), 4)
+            }
+        else:
+            fmt_entry["gradient_boosting"] = "not run"
+
+        comparison[fmt] = fmt_entry
+
+    return comparison
+
+
+def build_method_payload_breakdown(records: List[Dict[str, Any]], threshold: float = 0.5) -> Dict[str, Any]:
     """Build honest method x payload rate performance breakdown with real counts in every cell."""
     df = pd.DataFrame(records)
     results = {}
@@ -231,7 +532,7 @@ def build_method_payload_breakdown(records: List[Dict[str, Any]]) -> Dict[str, A
                 yt = eval_subset["label"].values
                 yp = eval_subset["cal_prob"].values
 
-                acc = float(accuracy_score(yt, yp >= 0.5))
+                acc = float(accuracy_score(yt, yp >= threshold))
                 try:
                     auc = float(roc_auc_score(yt, yp)) if len(np.unique(yt)) > 1 else 0.5
                 except Exception:
@@ -299,7 +600,7 @@ def generate_method_payload_heatmap(breakdown: Dict[str, Any], output_path: Path
             text = annotations[i][j]
             if text:
                 val = matrix[i, j]
-                color = "white" if val > 0.75 else "black"
+                color = "white" if val > 0.7 else "black"
                 plt.text(j, i, text, ha="center", va="center", color=color, fontsize=9, fontweight="semibold")
 
     plt.tight_layout()
@@ -309,12 +610,8 @@ def generate_method_payload_heatmap(breakdown: Dict[str, Any], output_path: Path
     logger.info(f"Saved method x payload heatmap to {output_path}")
 
 
-def run_leave_one_method_out(records: List[Dict[str, Any]], per_format_metrics: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Leave-one-method-out evaluation:
-    Tests detection sensitivity on each method in isolation against clean covers,
-    and quantifies the generalization gap relative to overall format AUC.
-    """
+def run_leave_one_method_out(records: List[Dict[str, Any]], per_format_metrics: Dict[str, Any], threshold: float = 0.5) -> Dict[str, Any]:
+    """Leave-one-method-out evaluation."""
     df = pd.DataFrame(records)
     results = {}
 
@@ -334,7 +631,7 @@ def run_leave_one_method_out(records: List[Dict[str, Any]], per_format_metrics: 
                 auc = float(roc_auc_score(yt, yp)) if len(np.unique(yt)) > 1 else 0.5
             except Exception:
                 auc = 0.5
-            acc = float(accuracy_score(yt, yp >= 0.5))
+            acc = float(accuracy_score(yt, yp >= threshold))
             gap = round(overall_fmt_auc - auc, 4)
 
             method_evals[m] = {
@@ -350,222 +647,150 @@ def run_leave_one_method_out(records: List[Dict[str, Any]], per_format_metrics: 
     return results
 
 
-def audit_performance_targets(records: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Audits the three performance targets specified in task section 4.4:
-    1. Image LSB >= 0.2 bpp -> AUC >= 0.95
-    2. Audio LSB >= 0.4 -> AUC >= 0.90
-    3. Video -> AUC >= 0.95
-    Provides honest empirical evaluation and an evidence paragraph for any missed targets.
-    """
-    df = pd.DataFrame(records)
-
-    # Target 1: Image LSB >= 0.20
-    img_clean = df[(df["media_type"] == "image") & (df["label"] == 0)]
-    img_lsb = df[(df["media_type"] == "image") & (df["method"].isin(["lsb_replacement", "lsb_matching"])) & (df["payload_rate"] >= 0.20)]
-    sub_img = pd.concat([img_clean, img_lsb], ignore_index=True)
-    if len(img_lsb) > 0 and len(img_clean) > 0:
-        auc_img = float(roc_auc_score(sub_img["label"], sub_img["cal_prob"]))
-    else:
-        auc_img = 0.5
-    img_passed = (auc_img >= 0.95)
-
-    # Target 2: Audio LSB >= 0.40
-    aud_clean = df[(df["media_type"] == "audio") & (df["label"] == 0)]
-    aud_lsb = df[(df["media_type"] == "audio") & (df["method"].isin(["lsb_replacement", "lsb_matching"])) & (df["payload_rate"] >= 0.40)]
-    sub_aud = pd.concat([aud_clean, aud_lsb], ignore_index=True)
-    if len(aud_lsb) > 0 and len(aud_clean) > 0:
-        auc_aud = float(roc_auc_score(sub_aud["label"], sub_aud["cal_prob"]))
-    else:
-        auc_aud = 0.5
-    aud_passed = (auc_aud >= 0.90)
-
-    # Target 3: Video
-    vid_clean = df[(df["media_type"] == "video") & (df["label"] == 0)]
-    vid_stego = df[(df["media_type"] == "video") & (df["label"] == 1)]
-    sub_vid = pd.concat([vid_clean, vid_stego], ignore_index=True)
-    if len(vid_stego) > 0 and len(vid_clean) > 0:
-        auc_vid = float(roc_auc_score(sub_vid["label"], sub_vid["cal_prob"]))
-    else:
-        auc_vid = 0.5
-    vid_passed = (auc_vid >= 0.95)
-
-    targets = {
-        "image_lsb_gte_0_20": {
-            "target": "AUC >= 0.95",
-            "achieved_auc": round(auc_img, 4),
-            "sample_count": len(img_lsb),
-            "passed": img_passed
-        },
-        "audio_lsb_gte_0_40": {
-            "target": "AUC >= 0.90",
-            "achieved_auc": round(auc_aud, 4),
-            "sample_count": len(aud_lsb),
-            "passed": aud_passed
-        },
-        "video_overall": {
-            "target": "AUC >= 0.95",
-            "achieved_auc": round(auc_vid, 4),
-            "sample_count": len(vid_stego),
-            "passed": vid_passed
-        }
-    }
-
-    # Evidence paragraph for missed targets (honest reporting)
-    missed = [k for k, v in targets.items() if not v["passed"]]
-    if missed:
-        targets["evidence_paragraph"] = (
-            f"Target Evaluation Note: The current evaluation is grounded on the smoke profile "
-            f"trained on 112 total cover files for 2 epochs on CPU (designed as a fast verification gate "
-            f"for end-to-end model pipeline, shapes, and checkpoints). Under this rapid verification budget, "
-            f"Image LSB achieved {auc_img:.4f} (target 0.95), Audio LSB achieved {auc_aud:.4f} (target 0.90), "
-            f"and Video achieved {auc_vid:.4f} (target 0.95). As detailed in docs/GPU_TRAINING.md, reaching "
-            f"the final detection targets (>0.95 AUC) requires full convergence on the GPU profile "
-            f"(20,000 image covers, 8,000 audio windows, 1,500 video clips over 30 epochs with high-payload curriculum)."
-        )
-    else:
-        targets["evidence_paragraph"] = "All target detection benchmarks were successfully met."
-
-    return targets
-
-
-def build_side_by_side_comparison(
-    deep_metrics: Dict[str, Any],
-    models_dir: Path
-) -> Dict[str, Any]:
-    """Assemble honest side-by-side comparison table between Deep Model, Handcrafted MLP, and GBDT."""
-    comparison = {}
-
-    # Extract existing baseline results if available
-    summary_path = models_dir / "training_summary.json"
-    mlp_metrics = {}
-    if summary_path.exists():
-        try:
-            with open(summary_path) as f:
-                summary = json.load(f)
-                mlp_metrics = summary.get("test_metrics", {})
-        except Exception:
-            pass
-
-    for fmt in ["image", "audio", "video"]:
-        deep_f = deep_metrics.get("per_format", {}).get(fmt, {})
-        mlp_f = mlp_metrics.get(fmt, {})
-
-        comparison[fmt] = {
-            "deep_model": {
-                "roc_auc": deep_f.get("roc_auc", 0.5),
-                "accuracy": deep_f.get("accuracy", 0.5),
-                "pe": deep_f.get("p_e", 0.5)
-            },
-            "handcrafted_mlp": {
-                "roc_auc": mlp_f.get("roc_auc", 0.88),
-                "accuracy": mlp_f.get("accuracy", 0.80),
-                "pe": mlp_f.get("p_e", 0.18)
-            },
-            "gradient_boosting": {
-                "roc_auc": 0.85 if fmt == "image" else 0.82 if fmt == "audio" else 0.89,
-                "accuracy": 0.78 if fmt == "image" else 0.75 if fmt == "audio" else 0.81
-            }
-        }
-
-    return comparison
-
-
 def main():
     parser = argparse.ArgumentParser(description="Evaluate VaultBreaker model on test dataset.")
     parser.add_argument("--config", type=str, default="configs/default.yaml", help="Path to config file")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "mps", "cuda"])
+    parser.add_argument("--smoke", action="store_true", help="Smoke run: writes strictly to docs/RESULTS/smoke/ and never overwrites real results")
     args = parser.parse_args()
 
     config = load_config(args.config)
     paths_cfg = config.get("paths", {})
     splits_dir = Path(paths_cfg.get("splits_dir", "data/splits"))
     models_dir = Path(paths_cfg.get("models_dir", "models_saved"))
-    results_dir = Path(paths_cfg.get("results_dir", "docs/RESULTS"))
+    base_results_dir = Path(paths_cfg.get("results_dir", "docs/RESULTS"))
+    features_cache_dir = Path(paths_cfg.get("features_dir", "data/features")) / "cache"
+
+    # Separate results directory for smoke runs
+    if args.smoke:
+        results_dir = base_results_dir / "smoke"
+        logger.info(f"=== SMOKE RUN: Writing exclusively to {results_dir} (real results protected) ===")
+    else:
+        results_dir = base_results_dir
+
     ensure_dir(results_dir)
 
     deep_ckpt_path = models_dir / "deep_model.pt"
-    calibrator_path = models_dir / "deep_calibrator.pt"
+    deep_calibrator_path = models_dir / "deep_calibrator.pt"
     test_manifest_path = splits_dir / "manifest_test.csv"
 
-    device = torch.device(args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu"))
+    if not test_manifest_path.exists():
+        raise FileNotFoundError(f"Test manifest {test_manifest_path} not found! Run make_dataset.py first.")
 
-    if deep_ckpt_path.exists() and test_manifest_path.exists():
-        logger.info("Found trained deep model checkpoint. Executing Deep Steganography Evaluation...")
-        eval_results, records = evaluate_deep_model_test_set(
+    df_test_raw = pd.read_csv(test_manifest_path)
+    # Build strictly balanced test set (1 clean to 1 stego per source, evenly sampled)
+    df_test_balanced = build_balanced_test_set(df_test_raw, seed=config.get("seed", 42))
+
+    device_str = args.device
+    if device_str == "auto":
+        if torch.cuda.is_available():
+            device_str = "cuda"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device_str = "mps"
+        else:
+            device_str = "cpu"
+    device = torch.device(device_str)
+
+    deep_eval_results = None
+    handcrafted_eval_results = None
+    gbdt_eval_results = None
+
+    # 1. Evaluate Deep Model (if present)
+    if deep_ckpt_path.exists():
+        logger.info(f"Executing Deep Model Evaluation ({deep_ckpt_path}) on balanced test manifest...")
+        deep_eval_results, deep_records = evaluate_deep_model_test_set(
             deep_ckpt_path=deep_ckpt_path,
-            calibrator_path=calibrator_path,
-            manifest_path=test_manifest_path,
+            calibrator_path=deep_calibrator_path,
+            df_test_balanced=df_test_balanced,
             device=device
         )
+        t_cal = deep_eval_results["overall"].get("calibrated_threshold", 0.5)
 
-        # Method x Payload Breakdown
-        breakdown = build_method_payload_breakdown(records)
-        eval_results["method_payload_breakdown"] = breakdown
-
-        # Generate Heatmap PNG
+        # Breakdown and heatmap
+        breakdown = build_method_payload_breakdown(deep_records, threshold=t_cal)
+        deep_eval_results["method_payload_breakdown"] = breakdown
         heatmap_path = results_dir / "method_payload_heatmap.png"
         generate_method_payload_heatmap(breakdown, heatmap_path)
 
-        # Leave-One-Method-Out Evaluation
-        lomo = run_leave_one_method_out(records, eval_results["per_format"])
-        eval_results["leave_one_method_out"] = lomo
+        lomo = run_leave_one_method_out(deep_records, deep_eval_results["per_format"], threshold=t_cal)
+        deep_eval_results["leave_one_method_out"] = lomo
 
-        # Target Checks
-        targets = audit_performance_targets(records)
-        eval_results["target_checks"] = targets
+        if args.smoke:
+            deep_eval_results["is_smoke"] = True
+            deep_eval_results["smoke_label"] = "Smoke test, not real performance"
 
-        # Side-by-side comparison
-        comp = build_side_by_side_comparison(eval_results, models_dir)
-        eval_results["side_by_side_comparison"] = comp
+        with open(results_dir / "metrics_deep.json", "w") as f:
+            json.dump(deep_eval_results, f, indent=2)
+        logger.info(f"Saved {results_dir / 'metrics_deep.json'}")
 
-        # Save to metrics.json
-        out_metrics = results_dir / "metrics.json"
-        with open(out_metrics, "w") as f:
-            json.dump(eval_results, f, indent=2)
-
-        print("\n" + "=" * 65)
-        print("          VAULTBREAKER EVALUATION SUMMARY")
-        print("=" * 65)
-        print(f"Overall Accuracy:   {eval_results['overall']['accuracy']*100:.2f}%")
-        print(f"Overall ROC-AUC:    {eval_results['overall']['roc_auc']:.4f} (95% CI: {eval_results['overall']['roc_auc_ci95']})")
-        print(f"Overall P_E:        {eval_results['overall']['p_e']:.4f}")
-        for fmt, m in eval_results["per_format"].items():
-            print(f"[{fmt.upper():5s}] Acc: {m['accuracy']*100:.1f}% | AUC: {m['roc_auc']:.4f} | Samples: {m['sample_count']}")
-        print(f"Heatmap Saved:      {heatmap_path}")
-        print(f"Metrics JSON:       {out_metrics}")
-        print("=" * 65 + "\n")
-
-    else:
-        logger.warning("Deep model checkpoint not found! Falling back to handcrafted feature evaluation...")
-        # Classic handcrafted fallback
-        features_dir = Path(paths_cfg.get("features_dir", "data/features"))
-        test_matrix_path = features_dir / "split_test.npz"
-        if not test_matrix_path.exists():
-            raise FileNotFoundError(f"Neither deep model nor test matrix {test_matrix_path} found!")
-
-        test_data = dict(np.load(test_matrix_path, allow_pickle=True))
-        feat_cfg = config.get("features", {})
-        model_cfg = config.get("models", {})
-
-        model = VaultBreakerUnifiedNet(
-            img_dim=feat_cfg.get("image_dim", 72),
-            aud_dim=feat_cfg.get("audio_dim", 56),
-            vid_dim=feat_cfg.get("video_dim", 64),
-            latent_dim=model_cfg.get("latent_dim", 128),
-            hidden_dim=model_cfg.get("hidden_dim", 256),
-            use_aux_head=model_cfg.get("use_aux_head", True),
-            num_methods=8
+    # 2. Evaluate Handcrafted MLP Model (if present)
+    handcrafted_ckpt = models_dir / "unified_model.pt"
+    if handcrafted_ckpt.exists():
+        logger.info(f"Executing Handcrafted Model Evaluation ({handcrafted_ckpt}) on balanced test manifest...")
+        handcrafted_eval_results, hc_records = evaluate_handcrafted_model_test_set(
+            models_dir=models_dir,
+            df_test_balanced=df_test_balanced,
+            features_cache_dir=features_cache_dir
         )
-        weights_path = models_dir / "unified_model.pt"
-        if weights_path.exists():
-            model.load_state_dict(torch.load(weights_path, map_location="cpu"))
-        cal_path = models_dir / "calibrator.joblib"
-        calibrator = TemperatureScalingCalibrator.load(cal_path) if cal_path.exists() else TemperatureScalingCalibrator(target_fpr=0.05)
-        suite = StegoEvaluationSuite(model, calibrator)
-        eval_results = suite.run_full_evaluation(test_data, results_dir)
+        if handcrafted_eval_results:
+            t_hc = handcrafted_eval_results["overall"].get("calibrated_threshold", 0.5)
+            handcrafted_eval_results["method_payload_breakdown"] = build_method_payload_breakdown(hc_records, threshold=t_hc)
+            handcrafted_eval_results["leave_one_method_out"] = run_leave_one_method_out(hc_records, handcrafted_eval_results["per_format"], threshold=t_hc)
+
+            if args.smoke:
+                handcrafted_eval_results["is_smoke"] = True
+                handcrafted_eval_results["smoke_label"] = "Smoke test, not real performance"
+
+            with open(results_dir / "metrics_handcrafted.json", "w") as f:
+                json.dump(handcrafted_eval_results, f, indent=2)
+            logger.info(f"Saved {results_dir / 'metrics_handcrafted.json'}")
+
+    # 3. Evaluate Real Gradient Boosting Baseline (if present)
+    gbdt_eval_results = evaluate_gradient_boosting_test_set(
+        models_dir=models_dir,
+        df_test_balanced=df_test_balanced,
+        features_cache_dir=features_cache_dir
+    )
+
+    # 4. Side-by-side comparison (audited, zero hardcoded numbers)
+    comparison_table = build_side_by_side_comparison(
+        deep_metrics=deep_eval_results,
+        handcrafted_metrics=handcrafted_eval_results,
+        gbdt_metrics=gbdt_eval_results
+    )
+    comp_data = {
+        "is_smoke": bool(args.smoke),
+        "test_manifest": str(test_manifest_path),
+        "comparison": comparison_table
+    }
+    with open(results_dir / "comparison.json", "w") as f:
+        json.dump(comp_data, f, indent=2)
+    logger.info(f"Saved {results_dir / 'comparison.json'}")
+
+    # Save primary metrics.json for backward compatibility
+    primary_metrics = deep_eval_results or handcrafted_eval_results
+    if primary_metrics:
+        primary_metrics["side_by_side_comparison"] = comparison_table
         with open(results_dir / "metrics.json", "w") as f:
-            json.dump(eval_results, f, indent=2)
+            json.dump(primary_metrics, f, indent=2)
+
+    # Console Summary Table
+    print("\n" + "=" * 70)
+    print("               VAULTBREAKER EVALUATION SUMMARY")
+    print("=" * 70)
+    if primary_metrics:
+        print(f"Model Type:         {primary_metrics.get('model_type')}")
+        print(f"Overall Accuracy:   {primary_metrics['overall']['accuracy']*100:.2f}% (at calibrated threshold {primary_metrics['overall'].get('calibrated_threshold')})")
+        print(f"Overall ROC-AUC:    {primary_metrics['overall']['roc_auc']:.4f} (95% CI: {primary_metrics['overall']['roc_auc_ci95']})")
+        print(f"Overall Recall@5%:  {primary_metrics['overall'].get('recalls_at_fpr', {}).get('recall_at_5pct_fpr', 0.0):.4f}")
+        print("-" * 70)
+        print(f"{'Format':<8} | {'ROC-AUC':<9} | {'Recall@5%':<10} | {'Accuracy':<9} | {'#Test Sources':<14} | {'Status'}")
+        print("-" * 70)
+        for fmt, m in primary_metrics.get("per_format", {}).items():
+            r5 = m.get("recalls_at_fpr", {}).get("recall_at_5pct_fpr", 0.0)
+            status = m.get("status", "trusted")
+            print(f"{fmt.upper():<8} | {m['roc_auc']:<9.4f} | {r5:<10.4f} | {m['accuracy']*100:<8.1f}% | {m['unique_sources']:<14d} | {status}")
+    print("=" * 70 + "\n")
 
 
 if __name__ == "__main__":

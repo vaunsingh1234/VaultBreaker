@@ -1,0 +1,66 @@
+{
+  "is_smoke": false,
+  "test_manifest": "data/splits/manifest_test.csv",
+  "comparison": {
+    "image": {
+      "deep_model": {
+        "roc_auc": 0.9754,
+        "accuracy": 0.5,
+        "pe": 0.0883,
+        "recall_at_5pct_fpr": 0.85
+      },
+      "handcrafted_mlp": {
+        "roc_auc": 0.9309,
+        "accuracy": 0.8783,
+        "pe": 0.1183,
+        "recall_at_5pct_fpr": 0.8067
+      },
+      "gradient_boosting": {
+        "roc_auc": 0.9603,
+        "accuracy": 0.9067,
+        "pe": 0.09,
+        "recall_at_5pct_fpr": 0.8667
+      }
+    },
+    "audio": {
+      "deep_model": {
+        "roc_auc": 0.4991,
+        "accuracy": 0.5,
+        "pe": 0.493,
+        "recall_at_5pct_fpr": 0.0559
+      },
+      "handcrafted_mlp": {
+        "roc_auc": 0.6205,
+        "accuracy": 0.5629,
+        "pe": 0.3881,
+        "recall_at_5pct_fpr": 0.1329
+      },
+      "gradient_boosting": {
+        "roc_auc": 0.8108,
+        "accuracy": 0.6573,
+        "pe": 0.2517,
+        "recall_at_5pct_fpr": 0.3706
+      }
+    },
+    "video": {
+      "deep_model": {
+        "roc_auc": 0.5674,
+        "accuracy": 0.55,
+        "pe": 0.425,
+        "recall_at_5pct_fpr": 0.1333
+      },
+      "handcrafted_mlp": {
+        "roc_auc": 0.9311,
+        "accuracy": 0.8583,
+        "pe": 0.05,
+        "recall_at_5pct_fpr": 0.9167
+      },
+      "gradient_boosting": {
+        "roc_auc": 0.9632,
+        "accuracy": 0.8917,
+        "pe": 0.075,
+        "recall_at_5pct_fpr": 0.9
+      }
+    }
+  }
+}

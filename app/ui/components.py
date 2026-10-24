@@ -250,12 +250,19 @@ def render_format_card(title: str, badge: str, m_dict: Optional[Dict[str, Any]],
         auc_str = f"{m_dict['roc_auc']:.4f}"
         acc_str = f"{m_dict['accuracy'] * 100:.1f}%"
         src_str = f"{m_dict['unique_sources']} distinct source files"
+        
+        warning_html = ""
+        n_src = m_dict.get("unique_sources")
+        if (n_src is not None and n_src < 30) or m_dict.get("status") == "too few samples to trust" or m_dict.get("warning") == "too few samples to trust":
+            warning_html = '<div style="font-size: 10px; color: #E0B341; margin-top: 4px; font-weight: 500;">⚠️ too few samples to trust (&lt; 30 sources)</div>'
+
         body = (
             f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin: 8px 0 2px 0;">'
             f'<div title="{html.escape(help_auc)}"><div class="stat-value">{auc_str}</div><div style="font-size:11px; color:#8B8B8B;">Area under ROC curve</div></div>'
             f'<div style="text-align:right;" title="{html.escape(help_acc)}"><div style="font-size:18px; font-weight:600; font-family:\'JetBrains Mono\'; color:#EDEDED;">{acc_str}</div><div style="font-size:11px; color:#8B8B8B;">Overall Accuracy</div></div>'
             f'</div>'
             f'<div style="font-size: 11px; color: #8B8B8B; margin-top: 6px;" title="Independent media sources in evaluation partition">{src_str}</div>'
+            f'{warning_html}'
         )
     else:
         body = (
@@ -275,12 +282,48 @@ def render_format_card(title: str, badge: str, m_dict: Optional[Dict[str, Any]],
 
 
 def load_real_metrics(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Load test evaluation metrics from docs/RESULTS/metrics.json. Returns None if missing or invalid."""
+    """Load test evaluation metrics from docs/RESULTS/metrics_deep.json, metrics_handcrafted.json, or metrics.json.
+    Returns None if missing or invalid.
+    """
     import json
-    m_path = results_path if results_path else (Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS" / "metrics.json")
-    if m_path.exists():
+    results_dir = Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS"
+    candidates = []
+    if results_path:
+        candidates.append(results_path)
+    else:
+        candidates = [
+            results_dir / "metrics_deep.json",
+            results_dir / "metrics.json",
+            results_dir / "metrics_handcrafted.json",
+            results_dir / "smoke" / "metrics_deep.json",
+            results_dir / "smoke" / "metrics.json",
+        ]
+
+    for p in candidates:
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and data:
+                        if "smoke" in str(p) or data.get("is_smoke"):
+                            data["is_smoke"] = True
+                        return data
+            except Exception:
+                continue
+    return None
+
+
+def load_comparison_results(results_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Load side-by-side comparison results from docs/RESULTS/comparison.json."""
+    import json
+    c_path = results_path if results_path else (Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS" / "comparison.json")
+    if not c_path.exists():
+        smoke_c_path = Path(__file__).resolve().parent.parent.parent / "docs" / "RESULTS" / "smoke" / "comparison.json"
+        if smoke_c_path.exists():
+            c_path = smoke_c_path
+    if c_path.exists():
         try:
-            with open(m_path, "r") as f:
+            with open(c_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict) and data:
                     return data

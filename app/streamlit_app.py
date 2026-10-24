@@ -54,6 +54,7 @@ from app.ui.components import (
     render_entities_table,
     render_format_card,
     load_real_metrics,
+    load_comparison_results,
     empty_state
 )
 from vaultbreaker.stego_tools.hide import hide_message, get_container_capacity
@@ -550,6 +551,12 @@ def render_scan_page():
     ''', unsafe_allow_html=True)
 
     m_data = load_real_metrics()
+    if m_data and m_data.get("is_smoke"):
+        st.markdown('''
+        <div style="padding: 8px 12px; border-radius: 6px; background: rgba(224, 179, 65, 0.15); border: 1px solid #E0B341; color: #E0B341; margin-bottom: 10px; font-weight: 600; font-size: 13px;">
+            ⚠️ Smoke test, not real performance
+        </div>
+        ''', unsafe_allow_html=True)
     per_fmt = m_data.get("per_format") if m_data else None
 
     col_b1, col_b2, col_b3 = st.columns(3)
@@ -1189,7 +1196,7 @@ def render_results_page():
     <div style="margin-bottom: 1.5rem;">
         <h1 style="margin:0;">Evaluation Results & Benchmark Metrics</h1>
         <div style="color: var(--text-secondary); font-size: 14px; margin-top: 2px;">
-            Strictly derived from real test evaluation metrics in docs/RESULTS/metrics.json
+            Strictly derived from real test evaluation metrics in docs/RESULTS/
         </div>
     </div>
     ''', unsafe_allow_html=True)
@@ -1205,6 +1212,14 @@ def render_results_page():
         ''', unsafe_allow_html=True)
         return
 
+    # Smoke Test Warning Banner if applicable
+    if metrics_data.get("is_smoke"):
+        st.markdown('''
+        <div style="padding: 12px 16px; border-radius: 8px; background: rgba(224, 179, 65, 0.15); border: 1px solid #E0B341; color: #E0B341; margin-bottom: 16px; font-weight: 600; font-size: 14px;">
+            ⚠️ Smoke test, not real performance
+        </div>
+        ''', unsafe_allow_html=True)
+
     # Table for Image / Audio / Video / Overall
     overall_m = metrics_data.get("overall") or {}
     per_fmt = metrics_data.get("per_format") or {}
@@ -1213,24 +1228,35 @@ def render_results_page():
     vid_m = per_fmt.get("video") or {}
 
     def format_row(name: str, m: Dict[str, Any]):
+        n_src = m.get("unique_sources")
+        trust_badge = ""
+        if (n_src is not None and n_src < 30) or m.get("status") == "too few samples to trust" or m.get("warning") == "too few samples to trust":
+            trust_badge = ' <span style="font-size:10px; color:#E0B341; padding:2px 6px; border-radius:4px; background:rgba(224,179,65,0.15); border:1px solid rgba(224,179,65,0.3); margin-left:6px; font-weight:normal;">too few samples to trust</span>'
+
         raw_acc = m.get("accuracy")
         acc = f"{float(raw_acc) * 100:.1f}%" if raw_acc is not None else "N/A"
         raw_auc = m.get("roc_auc")
         auc = f"{float(raw_auc):.4f}" if raw_auc is not None else "N/A"
         ci = m.get("roc_auc_ci95")
         ci_str = f"[{ci[0]:.3f}, {ci[1]:.3f}]" if isinstance(ci, list) and len(ci) == 2 else ""
+        
+        # Recall @ 5% FPR
+        rfpr = m.get("recalls_at_fpr", {})
+        r5 = rfpr.get("recall_at_5pct_fpr") if isinstance(rfpr, dict) else m.get("recall_5pct_fpr")
+        r5_str = f"{float(r5) * 100:.1f}%" if r5 is not None else "N/A"
+
         raw_prec = m.get("precision")
         prec = f"{float(raw_prec) * 100:.1f}%" if raw_prec is not None else "N/A"
         raw_rec = m.get("recall")
         rec = f"{float(raw_rec) * 100:.1f}%" if raw_rec is not None else "N/A"
         n_files = m.get("sample_count")
-        n_src = m.get("unique_sources")
         src_str = f"{n_files} files ({n_src} sources)" if n_files and n_src else "N/A"
         return f'''
         <tr>
-            <td style="font-weight:600; color:#EDEDED;">{name}</td>
+            <td style="font-weight:600; color:#EDEDED;">{name}{trust_badge}</td>
             <td style="font-family:'JetBrains Mono'; font-weight:600; color:#EDEDED;">{acc}</td>
             <td style="font-family:'JetBrains Mono'; color:#E0B341;">{auc} <span style="font-size:10px; color:#8B8B8B;">{ci_str}</span></td>
+            <td style="font-family:'JetBrains Mono'; color:#3FB67A;">{r5_str}</td>
             <td style="font-family:'JetBrains Mono'; color:#3FB67A;">{prec}</td>
             <td style="font-family:'JetBrains Mono'; color:#3FB67A;">{rec}</td>
             <td style="color:#B5B5B5; font-size:12px;">{src_str}</td>
@@ -1242,25 +1268,84 @@ def render_results_page():
         <thead>
             <tr>
                 <th>Modality</th>
-                <th title="Fraction of correct clean vs stego verdicts">Accuracy</th>
+                <th title="Accuracy at threshold calibrated on validation set (5% FPR)">Calibrated Acc (5% FPR)</th>
                 <th title="Area under ROC curve with 95% bootstrap confidence interval">ROC-AUC [95% CI]</th>
+                <th title="Recall at 5% False Positive Rate">Recall @ 5% FPR</th>
                 <th title="Fraction of flagged files that are true stego">Precision</th>
                 <th title="Fraction of true stego files successfully detected">Recall</th>
-                <th title="Evaluated test partition size">Test Set Scale</th>
+                <th title="Evaluated test partition scale">Test Set Scale</th>
             </tr>
         </thead>
         <tbody>
-            {format_row("Image (SRM + DCT)", img_m)}
-            {format_row("Audio (Waveform + LSB)", aud_m)}
-            {format_row("Video (Temporal Residuals)", vid_m)}
-            {format_row("Overall Unified Model", overall_m)}
+            {format_row("Image", img_m)}
+            {format_row("Audio", aud_m)}
+            {format_row("Video", vid_m)}
+            {format_row("Overall", overall_m)}
         </tbody>
     </table>
     '''
     st.markdown(table_html, unsafe_allow_html=True)
 
+    # Side-by-Side Model Comparison Table
+    comparison_data = load_comparison_results()
+    if comparison_data:
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+        st.markdown('''
+        <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:8px;">
+            Side-by-Side Model Comparison (Same Test Manifest)
+        </div>
+        ''', unsafe_allow_html=True)
+
+        comp_rows = []
+        for fmt_key in ["image", "audio", "video"]:
+            fmt_data = comparison_data.get(fmt_key, {})
+            fmt_label = fmt_key.capitalize()
+
+            def _fmt_cell(val):
+                if isinstance(val, dict):
+                    auc_val = val.get("roc_auc")
+                    r5_val = val.get("recall_at_5pct_fpr")
+                    acc_val = val.get("accuracy")
+                    auc_s = f"{float(auc_val):.4f}" if auc_val is not None else "N/A"
+                    r5_s = f"{float(r5_val) * 100:.1f}%" if r5_val is not None else "N/A"
+                    acc_s = f"{float(acc_val) * 100:.1f}%" if acc_val is not None else "N/A"
+                    return f"AUC: <strong>{auc_s}</strong> | R@5%: {r5_s} | Acc: {acc_s}"
+                elif val == "not run" or not val:
+                    return '<span style="color:#8B8B8B; font-style:italic;">not run</span>'
+                return str(val)
+
+            deep_cell = _fmt_cell(fmt_data.get("deep_model"))
+            mlp_cell = _fmt_cell(fmt_data.get("handcrafted_mlp"))
+            gb_cell = _fmt_cell(fmt_data.get("gradient_boosting"))
+
+            comp_rows.append(f'''
+            <tr>
+                <td style="font-weight:600; color:#EDEDED;">{fmt_label}</td>
+                <td style="font-family:'JetBrains Mono'; font-size:12px;">{deep_cell}</td>
+                <td style="font-family:'JetBrains Mono'; font-size:12px;">{mlp_cell}</td>
+                <td style="font-family:'JetBrains Mono'; font-size:12px;">{gb_cell}</td>
+            </tr>
+            ''')
+
+        comp_table_html = f'''
+        <table class="glass-table">
+            <thead>
+                <tr>
+                    <th>Modality</th>
+                    <th>Deep Model (VaultBreakerDeepNet)</th>
+                    <th>Handcrafted MLP (UnifiedNet)</th>
+                    <th>Gradient Boosting (HistGBDT)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(comp_rows)}
+            </tbody>
+        </table>
+        '''
+        st.markdown(comp_table_html, unsafe_allow_html=True)
+
     # Bar chart of accuracy per hiding method
-    st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
     st.markdown('''
     <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:8px;">
         Accuracy by Hiding Method
@@ -1313,7 +1398,13 @@ def render_results_page():
         st.plotly_chart(fig_methods, use_container_width=True)
         st.caption("* Note: Methods marked with asterisk have fewer than 30 evaluation samples.")
 
-    # Artifact Visuals: ROC Curves & Confusion Matrix from docs/RESULTS
+    # Artifact Visuals: Method x Payload Heatmap, ROC Curves & Confusion Matrix
+    heatmap_img_path = root_dir / "docs" / "RESULTS" / "method_payload_heatmap.png"
+    if heatmap_img_path.exists():
+        st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+        st.markdown("**Detection Rate by Hiding Method and Payload Rate**")
+        st.image(str(heatmap_img_path), use_column_width=True)
+
     col_img1, col_img2 = st.columns(2)
     roc_img_path = root_dir / "docs" / "RESULTS" / "roc_curves.png"
     cm_img_path = root_dir / "docs" / "RESULTS" / "confusion_matrices.png"
@@ -1334,11 +1425,11 @@ def render_results_page():
             Known Limitations
         </div>
         <ul style="font-size:13px; color:var(--text-primary); margin:0; padding-left:18px; line-height:1.7;">
-            <li><strong>Audio detection is weak:</strong> Echo hiding (~26.5% accuracy) and low-rate acoustic LSB remain difficult without raw PCM bitplane parity.</li>
-            <li><strong>Adaptive hiding is hard:</strong> Content-adaptive algorithms such as edge-adaptive spatial embedding (~45.6% accuracy) avoid dense edge residuals.</li>
+            <li><strong>Audio detection is weak:</strong> Echo hiding and low-rate acoustic LSB remain difficult without raw PCM bitplane parity.</li>
+            <li><strong>Adaptive hiding is hard:</strong> Content-adaptive algorithms such as edge-adaptive spatial embedding avoid dense edge residuals.</li>
             <li><strong>Synthetic stego files:</strong> Hidden-data media are produced by our research generators; real-world adversaries may employ custom ciphers.</li>
             <li><strong>Video motion constraints:</strong> Video dataset consists of simulated pan/zoom clips generated from still photography rather than complex camera motion.</li>
-            <li><strong>Conservative alert threshold:</strong> Operating at 5% clean false alarm target inevitably misses low-payload injections (< 0.10 bpp).</li>
+            <li><strong>Conservative alert threshold:</strong> Operating at 5% clean false alarm target inevitably misses low-payload injections (&lt; 0.10 bpp).</li>
         </ul>
     </div>
     ''', unsafe_allow_html=True)

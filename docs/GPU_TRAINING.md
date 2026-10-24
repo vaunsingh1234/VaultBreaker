@@ -22,11 +22,11 @@ VaultBreaker's deep architecture combines:
 
 ---
 
-## 2. Seed-Based Zero-Storage Data Regeneration
+## 2. Deterministic Real-Cover Download & On-The-Fly Stego Ingestion
 
 > [!NOTE]
 > **No Pre-Stored Multi-Gigabyte Data Upload Required!**
-> VaultBreaker uses a deterministic procedural data pipeline (`seed: 42`). When running on a remote cloud GPU, you do **not** need to upload large dataset archives. Running the dataset generation script creates identical source files, source-disjoint splits, and on-the-fly pairing automatically.
+> VaultBreaker downloads real cover benchmarks (Imagenette2-160 for images, ESC-50 for audio, plus user media from `data/user_media/` if present) deterministically (`seed: 42`). When running on a remote cloud GPU, you do **not** need to upload large pre-generated stego dataset archives. Running the dataset generation script downloads and standardizes real covers, partitions them into source-disjoint splits, and pairs them with on-the-fly steganographic embeddings during training.
 
 ---
 
@@ -144,8 +144,8 @@ api.upload_file(
 
 | Profile | Command | Covers (Img / Aud / Vid) | Target Hardware | Epochs | Expected Wall Clock |
 |---|---|---|---|---|---|
-| **Smoke** | `python scripts/train_deep.py --profile smoke --device cpu` | 60 / 40 / 12 | Laptop CPU | 2 | ~4.5 min |
-| **Laptop** | `python scripts/train_deep.py --profile laptop --device auto` | 500 / 300 / 50 | Apple Silicon (MPS) / PC | 8 | ~25 min |
+| **Smoke** | `python scripts/train_deep.py --profile smoke --device cpu` | 60 / 40 / 12 | Laptop CPU | 2 | ~1 min |
+| **Laptop** | `python scripts/train_deep.py --profile laptop --device auto` | 20,000 / 8,000 / 1,500 (up to available covers) | Apple Silicon (MPS) / PC | 8 | ~25 min |
 | **GPU** | `python scripts/train_deep.py --profile gpu --device cuda` | 20,000 / 8,000 / 1,500 | T4 / A100 / L4 GPU | 30 | ~2.5 hours |
 
 To resume from an existing checkpoint after an interruption:

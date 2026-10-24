@@ -205,48 +205,46 @@ def generate_image_dataset(
             "sha256": compute_sha256(clean_path)
         })
 
-        # 2. Stego Files — FULL CROSS-PRODUCT of every method x every payload rate
-        stego_combo_idx = 0
-        for method in methods:
-            for rate in payload_rates:
-                stego_seed = seed + i * 10000 + stego_combo_idx * 100 + 1
-                p_rng = np.random.RandomState(stego_seed)
+        # 2. Stego File (decouple method and payload rate: 1 stego variant per source, sampled evenly)
+        method = methods[i % len(methods)]
+        rate = payload_rates[(i // len(methods)) % len(payload_rates)]
+        stego_seed = seed + i * 10000 + 1
+        p_rng = np.random.RandomState(stego_seed)
 
-                try:
-                    if method == "dct_ac":
-                        n_bits = max(32, int((H // 8) * (W // 8) * 15 * rate))
-                        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                        stego_img, _ = embed_image_dct(raw_cover, payload, seed=stego_seed)
-                    elif method == "edge_adaptive":
-                        n_bits = max(32, int(H * W * rate))
-                        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                        stego_img, _ = embed_image_edge_adaptive(raw_cover, payload, seed=stego_seed)
-                    elif method == "lsb_matching":
-                        n_bits = max(32, int(H * W * rate))
-                        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                        stego_img, _ = embed_image_lsb_matching(raw_cover, payload, seed=stego_seed)
-                    else:  # lsb_replacement
-                        n_bits = max(32, int(H * W * rate))
-                        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                        stego_img, _ = embed_image_lsb_replacement(raw_cover, payload, seed=stego_seed)
-                except Exception as e:
-                    logger.warning(f"Stego embed failed for {source_id} {method} {rate}: {e}")
-                    stego_img = raw_cover.copy()
+        try:
+            if method == "dct_ac":
+                n_bits = max(32, int((H // 8) * (W // 8) * 15 * rate))
+                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+                stego_img, _ = embed_image_dct(raw_cover, payload, seed=stego_seed)
+            elif method == "edge_adaptive":
+                n_bits = max(32, int(H * W * rate))
+                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+                stego_img, _ = embed_image_edge_adaptive(raw_cover, payload, seed=stego_seed)
+            elif method == "lsb_matching":
+                n_bits = max(32, int(H * W * rate))
+                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+                stego_img, _ = embed_image_lsb_matching(raw_cover, payload, seed=stego_seed)
+            else:  # lsb_replacement
+                n_bits = max(32, int(H * W * rate))
+                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+                stego_img, _ = embed_image_lsb_replacement(raw_cover, payload, seed=stego_seed)
+        except Exception as e:
+            logger.warning(f"Stego embed failed for {source_id} {method} {rate}: {e}")
+            stego_img = raw_cover.copy()
 
-                stego_name = f"{source_id}_stego_{method}_{rate:.2f}.png"
-                stego_path = img_dir / stego_name
-                write_image(stego_path, stego_img)
-                records.append({
-                    "source_id": source_id,
-                    "filename": stego_name,
-                    "filepath": str(stego_path),
-                    "media_type": "image",
-                    "label": 1,
-                    "method": method,
-                    "payload_rate": round(float(rate), 2),
-                    "sha256": compute_sha256(stego_path)
-                })
-                stego_combo_idx += 1
+        stego_name = f"{source_id}_stego_{method}_{rate:.2f}.png"
+        stego_path = img_dir / stego_name
+        write_image(stego_path, stego_img)
+        records.append({
+            "source_id": source_id,
+            "filename": stego_name,
+            "filepath": str(stego_path),
+            "media_type": "image",
+            "label": 1,
+            "method": method,
+            "payload_rate": round(float(rate), 2),
+            "sha256": compute_sha256(stego_path)
+        })
 
     return records
 
@@ -316,44 +314,42 @@ def generate_audio_dataset(
             "sha256": compute_sha256(clean_path)
         })
 
-        # 2. Stego Files — FULL CROSS-PRODUCT of every method x every payload rate
-        stego_combo_idx = 0
-        for method in methods:
-            for rate in payload_rates:
-                stego_seed = seed + i * 10000 + stego_combo_idx * 100 + 1
-                p_rng = np.random.RandomState(stego_seed)
+        # 2. Stego File (decouple method and payload rate: 1 stego variant per source, sampled evenly)
+        method = methods[i % len(methods)]
+        rate = payload_rates[(i // len(methods)) % len(payload_rates)]
+        stego_seed = seed + i * 10000 + 1
+        p_rng = np.random.RandomState(stego_seed)
 
-                try:
-                    if method == "echo_hiding":
-                        n_bits = max(8, int(len(raw_samples) / 2048 * min(rate, 0.8)))
-                        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                        stego_samples, _ = embed_audio_echo(raw_samples, payload)
-                    elif method == "lsb_matching":
-                        n_bits = max(32, int(len(raw_samples) * rate))
-                        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                        stego_samples, _ = embed_audio_lsb_matching(raw_samples, payload, seed=stego_seed)
-                    else:  # lsb_replacement
-                        n_bits = max(32, int(len(raw_samples) * rate))
-                        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
-                        stego_samples, _ = embed_audio_lsb_replacement(raw_samples, payload, seed=stego_seed)
-                except Exception as e:
-                    logger.warning(f"Audio stego embed failed for {source_id} {method} {rate}: {e}")
-                    stego_samples = raw_samples.copy()
+        try:
+            if method == "echo_hiding":
+                n_bits = max(8, int(len(raw_samples) / 2048 * min(rate, 0.8)))
+                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+                stego_samples, _ = embed_audio_echo(raw_samples, payload)
+            elif method == "lsb_matching":
+                n_bits = max(32, int(len(raw_samples) * rate))
+                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+                stego_samples, _ = embed_audio_lsb_matching(raw_samples, payload, seed=stego_seed)
+            else:  # lsb_replacement
+                n_bits = max(32, int(len(raw_samples) * rate))
+                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+                stego_samples, _ = embed_audio_lsb_replacement(raw_samples, payload, seed=stego_seed)
+        except Exception as e:
+            logger.warning(f"Audio stego embed failed for {source_id} {method} {rate}: {e}")
+            stego_samples = raw_samples.copy()
 
-                stego_name = f"{source_id}_stego_{method}_{rate:.2f}.wav"
-                stego_path = aud_dir / stego_name
-                write_audio(stego_path, stego_samples, sample_rate)
-                records.append({
-                    "source_id": source_id,
-                    "filename": stego_name,
-                    "filepath": str(stego_path),
-                    "media_type": "audio",
-                    "label": 1,
-                    "method": method,
-                    "payload_rate": round(float(rate), 2),
-                    "sha256": compute_sha256(stego_path)
-                })
-                stego_combo_idx += 1
+        stego_name = f"{source_id}_stego_{method}_{rate:.2f}.wav"
+        stego_path = aud_dir / stego_name
+        write_audio(stego_path, stego_samples, sample_rate)
+        records.append({
+            "source_id": source_id,
+            "filename": stego_name,
+            "filepath": str(stego_path),
+            "media_type": "audio",
+            "label": 1,
+            "method": method,
+            "payload_rate": round(float(rate), 2),
+            "sha256": compute_sha256(stego_path)
+        })
 
     return records
 
@@ -374,7 +370,7 @@ def generate_video_dataset(
     """
     Generate paired CLEAN and STEGO video files using realistic pan/zoom
     traversal across REAL images in lossless FFV1 MKV containers.
-    Each source produces 2 clean and 2 stego files, guaranteeing >= 100 test videos.
+    Each source produces 1 clean and 1 stego file, guaranteeing balanced sets.
     """
     records = []
     vid_dir = output_dir / "video"
@@ -430,38 +426,36 @@ def generate_video_dataset(
             "sha256": compute_sha256(clean_path)
         })
 
-        # 2. Stego Files — FULL CROSS-PRODUCT of every method x every payload rate
-        stego_combo_idx = 0
-        for method in methods:
-            for rate in payload_rates:
-                stego_seed = seed + i * 10000 + stego_combo_idx * 100 + 1
-                p_rng = np.random.RandomState(stego_seed)
-                total_pixels = len(raw_frames) * H * W
-                n_bits = max(32, int(total_pixels * rate))
-                payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
+        # 2. Stego File (decouple method and payload rate: 1 stego variant per source, sampled evenly)
+        method = methods[i % len(methods)]
+        rate = payload_rates[(i // len(methods)) % len(payload_rates)]
+        stego_seed = seed + i * 10000 + 1
+        p_rng = np.random.RandomState(stego_seed)
+        total_pixels = len(raw_frames) * H * W
+        n_bits = max(32, int(total_pixels * rate))
+        payload = p_rng.randint(0, 2, size=n_bits, dtype=np.uint8)
 
-                try:
-                    if method == "frame_lsb_matching":
-                        stego_frames, _ = embed_video_frame_lsb_matching(raw_frames, payload, seed=stego_seed)
-                    else:
-                        stego_frames, _ = embed_video_frame_lsb(raw_frames, payload, seed=stego_seed)
-                except Exception as e:
-                    logger.warning(f"Video stego embed failed for {source_id} {method} {rate}: {e}")
-                    stego_frames = [f.copy() for f in raw_frames]
+        try:
+            if method == "frame_lsb_matching":
+                stego_frames, _ = embed_video_frame_lsb_matching(raw_frames, payload, seed=stego_seed)
+            else:
+                stego_frames, _ = embed_video_frame_lsb(raw_frames, payload, seed=stego_seed)
+        except Exception as e:
+            logger.warning(f"Video stego embed failed for {source_id} {method} {rate}: {e}")
+            stego_frames = [f.copy() for f in raw_frames]
 
-                stego_name = f"{source_id}_stego_{method}_{rate:.2f}.mkv"
-                stego_path = vid_dir / stego_name
-                write_video(stego_path, stego_frames, fps=fps)
-                records.append({
-                    "source_id": source_id,
-                    "filename": stego_name,
-                    "filepath": str(stego_path),
-                    "media_type": "video",
-                    "label": 1,
-                    "method": method,
-                    "payload_rate": round(float(rate), 2),
-                    "sha256": compute_sha256(stego_path)
-                })
-                stego_combo_idx += 1
+        stego_name = f"{source_id}_stego_{method}_{rate:.2f}.mkv"
+        stego_path = vid_dir / stego_name
+        write_video(stego_path, stego_frames, fps=fps)
+        records.append({
+            "source_id": source_id,
+            "filename": stego_name,
+            "filepath": str(stego_path),
+            "media_type": "video",
+            "label": 1,
+            "method": method,
+            "payload_rate": round(float(rate), 2),
+            "sha256": compute_sha256(stego_path)
+        })
 
     return records

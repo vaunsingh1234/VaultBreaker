@@ -58,6 +58,8 @@ data/generated/
 data/raw/
 data/.thumb_cache/
 data/.test_media/
+data/.uploads_cache/
+data/stego_output/
 data/scan_history.db
 models_saved/test_xgb.joblib
 

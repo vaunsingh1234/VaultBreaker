@@ -36,6 +36,13 @@ def compute_detection_error_pe(y_true: np.ndarray, y_prob: np.ndarray) -> Tuple[
     best_idx = np.argmin(pe_values)
     return float(pe_values[best_idx]), float(thresholds[best_idx])
 
+def _recall_at_fpr_val(yt: np.ndarray, yp: np.ndarray, target: float) -> float:
+    if len(np.unique(yt)) < 2:
+        return 0.0
+    fpr, tpr, _ = roc_curve(yt, yp)
+    idx = np.where(fpr <= target)[0]
+    return float(tpr[idx[-1]]) if len(idx) > 0 else 0.0
+
 def compute_bootstrap_ci(
     y_true: np.ndarray,
     y_prob: np.ndarray,
@@ -47,9 +54,16 @@ def compute_bootstrap_ci(
     """Calculates cluster bootstrap 95% confidence intervals by resampling unique sources."""
     n = len(y_true)
     if n < 4:
-        return {"accuracy_ci95": [0.0, 1.0], "roc_auc_ci95": [0.5, 0.5]}
+        return {
+            "accuracy_ci95": [0.0, 1.0],
+            "roc_auc_ci95": [0.5, 0.5],
+            "recall_1pct_fpr_ci95": [0.0, 1.0],
+            "recall_5pct_fpr_ci95": [0.0, 1.0],
+            "recall_10pct_fpr_ci95": [0.0, 1.0]
+        }
     rng = np.random.RandomState(seed)
     accs, aucs = [], []
+    r1s, r5s, r10s = [], [], []
 
     if source_ids is not None and len(source_ids) == n:
         unique_sources = np.unique(source_ids)
@@ -64,6 +78,9 @@ def compute_bootstrap_ci(
             if len(np.unique(yt_b)) > 1:
                 try:
                     aucs.append(float(roc_auc_score(yt_b, yp_b)))
+                    r1s.append(_recall_at_fpr_val(yt_b, yp_b, 0.01))
+                    r5s.append(_recall_at_fpr_val(yt_b, yp_b, 0.05))
+                    r10s.append(_recall_at_fpr_val(yt_b, yp_b, 0.10))
                 except Exception:
                     pass
     else:
@@ -75,14 +92,24 @@ def compute_bootstrap_ci(
             if len(np.unique(yt_b)) > 1:
                 try:
                     aucs.append(float(roc_auc_score(yt_b, yp_b)))
+                    r1s.append(_recall_at_fpr_val(yt_b, yp_b, 0.01))
+                    r5s.append(_recall_at_fpr_val(yt_b, yp_b, 0.05))
+                    r10s.append(_recall_at_fpr_val(yt_b, yp_b, 0.10))
                 except Exception:
                     pass
 
     acc_lo, acc_hi = np.percentile(accs, [2.5, 97.5]) if accs else (0.0, 1.0)
     auc_lo, auc_hi = np.percentile(aucs, [2.5, 97.5]) if aucs else (0.5, 0.5)
+    r1_lo, r1_hi = np.percentile(r1s, [2.5, 97.5]) if r1s else (0.0, 1.0)
+    r5_lo, r5_hi = np.percentile(r5s, [2.5, 97.5]) if r5s else (0.0, 1.0)
+    r10_lo, r10_hi = np.percentile(r10s, [2.5, 97.5]) if r10s else (0.0, 1.0)
+
     return {
         "accuracy_ci95": [round(float(acc_lo), 4), round(float(acc_hi), 4)],
-        "roc_auc_ci95": [round(float(auc_lo), 4), round(float(auc_hi), 4)]
+        "roc_auc_ci95": [round(float(auc_lo), 4), round(float(auc_hi), 4)],
+        "recall_1pct_fpr_ci95": [round(float(r1_lo), 4), round(float(r1_hi), 4)],
+        "recall_5pct_fpr_ci95": [round(float(r5_lo), 4), round(float(r5_hi), 4)],
+        "recall_10pct_fpr_ci95": [round(float(r10_lo), 4), round(float(r10_hi), 4)]
     }
 
 def compute_metrics(
@@ -123,7 +150,12 @@ def compute_metrics(
         "unique_sources": unique_src_count,
         "sample_count_str": f"{len(y_true)} files ({unique_src_count} unique sources)",
         "accuracy_ci95": ci_dict["accuracy_ci95"],
-        "roc_auc_ci95": ci_dict["roc_auc_ci95"]
+        "roc_auc_ci95": ci_dict["roc_auc_ci95"],
+        "recall_1pct_fpr_ci95": ci_dict["recall_1pct_fpr_ci95"],
+        "recall_5pct_fpr_ci95": ci_dict["recall_5pct_fpr_ci95"],
+        "recall_10pct_fpr_ci95": ci_dict["recall_10pct_fpr_ci95"],
+        "trust_warning": "too few samples to trust" if unique_src_count < 30 else None,
+        "is_trusted": unique_src_count >= 30
     }
 
 class StegoEvaluationSuite:

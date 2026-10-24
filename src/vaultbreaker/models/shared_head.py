@@ -18,10 +18,17 @@ class SharedStegoHead(nn.Module):
         )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
+        squeeze = False
         if z.dim() == 1:
             z = z.unsqueeze(0)
-            return self.classifier(z).squeeze(0)
-        return self.classifier(z)
+            squeeze = True
+        if self.training and z.shape[0] == 1:
+            self.classifier[1].eval()
+            out = self.classifier(z)
+            self.classifier[1].train()
+        else:
+            out = self.classifier(z)
+        return out.squeeze(0) if squeeze else out
 
 class AuxiliaryMethodHead(nn.Module):
     """
@@ -39,7 +46,14 @@ class AuxiliaryMethodHead(nn.Module):
         )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
+        squeeze = False
         if z.dim() == 1:
             z = z.unsqueeze(0)
-            return self.classifier(z).squeeze(0)
-        return self.classifier(z)
+            squeeze = True
+        if self.training and z.shape[0] == 1:
+            self.classifier[1].eval()
+            out = self.classifier(z)
+            self.classifier[1].train()
+        else:
+            out = self.classifier(z)
+        return out.squeeze(0) if squeeze else out

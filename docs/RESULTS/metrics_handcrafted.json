@@ -1,0 +1,575 @@
+{
+  "model_type": "VaultBreakerUnifiedNet",
+  "checkpoint": "models_saved/unified_model.pt",
+  "overall": {
+    "accuracy": 0.7863,
+    "precision": 0.9045,
+    "recall": 0.6402,
+    "f1": 0.7497,
+    "roc_auc": 0.8739,
+    "p_e": 0.2068,
+    "p_e_threshold": 0.5338,
+    "confusion_matrix": [
+      [
+        469,
+        34
+      ],
+      [
+        181,
+        322
+      ]
+    ],
+    "sample_count": 1006,
+    "unique_sources": 503,
+    "sample_count_str": "1006 files (503 unique sources)",
+    "accuracy_ci95": [
+      0.7644,
+      0.8072
+    ],
+    "roc_auc_ci95": [
+      0.8532,
+      0.8924
+    ],
+    "recall_1pct_fpr_ci95": [
+      0.4632,
+      0.5885
+    ],
+    "recall_5pct_fpr_ci95": [
+      0.5666,
+      0.666
+    ],
+    "recall_10pct_fpr_ci95": [
+      0.6282,
+      0.7157
+    ],
+    "trust_warning": null,
+    "is_trusted": true,
+    "recalls_at_fpr": {
+      "recall_at_1pct_fpr": 0.5408,
+      "recall_at_5pct_fpr": 0.6143,
+      "recall_at_10pct_fpr": 0.672
+    },
+    "calibrated_threshold": 0.6272
+  },
+  "per_format": {
+    "image": {
+      "accuracy": 0.8783,
+      "precision": 0.9595,
+      "recall": 0.79,
+      "f1": 0.8665,
+      "roc_auc": 0.9309,
+      "p_e": 0.1183,
+      "p_e_threshold": 0.6738,
+      "confusion_matrix": [
+        [
+          290,
+          10
+        ],
+        [
+          63,
+          237
+        ]
+      ],
+      "sample_count": 600,
+      "unique_sources": 300,
+      "sample_count_str": "600 files (300 unique sources)",
+      "accuracy_ci95": [
+        0.8533,
+        0.9033
+      ],
+      "roc_auc_ci95": [
+        0.9092,
+        0.9511
+      ],
+      "recall_1pct_fpr_ci95": [
+        0.7067,
+        0.8167
+      ],
+      "recall_5pct_fpr_ci95": [
+        0.7567,
+        0.85
+      ],
+      "recall_10pct_fpr_ci95": [
+        0.7933,
+        0.88
+      ],
+      "trust_warning": null,
+      "is_trusted": true,
+      "recalls_at_fpr": {
+        "recall_at_1pct_fpr": 0.77,
+        "recall_at_5pct_fpr": 0.8067,
+        "recall_at_10pct_fpr": 0.84
+      },
+      "calibrated_threshold": 0.6272
+    },
+    "audio": {
+      "accuracy": 0.5629,
+      "precision": 0.7143,
+      "recall": 0.2098,
+      "f1": 0.3243,
+      "roc_auc": 0.6205,
+      "p_e": 0.3881,
+      "p_e_threshold": 0.5144,
+      "confusion_matrix": [
+        [
+          131,
+          12
+        ],
+        [
+          113,
+          30
+        ]
+      ],
+      "sample_count": 286,
+      "unique_sources": 143,
+      "sample_count_str": "286 files (143 unique sources)",
+      "accuracy_ci95": [
+        0.528,
+        0.6014
+      ],
+      "roc_auc_ci95": [
+        0.5711,
+        0.6676
+      ],
+      "recall_1pct_fpr_ci95": [
+        0.007,
+        0.1399
+      ],
+      "recall_5pct_fpr_ci95": [
+        0.0839,
+        0.2448
+      ],
+      "recall_10pct_fpr_ci95": [
+        0.1608,
+        0.3427
+      ],
+      "trust_warning": null,
+      "is_trusted": true,
+      "recalls_at_fpr": {
+        "recall_at_1pct_fpr": 0.0979,
+        "recall_at_5pct_fpr": 0.1329,
+        "recall_at_10pct_fpr": 0.2378
+      },
+      "calibrated_threshold": 0.6272
+    },
+    "video": {
+      "accuracy": 0.8583,
+      "precision": 0.8209,
+      "recall": 0.9167,
+      "f1": 0.8661,
+      "roc_auc": 0.9311,
+      "p_e": 0.05,
+      "p_e_threshold": 0.9193,
+      "confusion_matrix": [
+        [
+          48,
+          12
+        ],
+        [
+          5,
+          55
+        ]
+      ],
+      "sample_count": 120,
+      "unique_sources": 60,
+      "sample_count_str": "120 files (60 unique sources)",
+      "accuracy_ci95": [
+        0.8083,
+        0.9167
+      ],
+      "roc_auc_ci95": [
+        0.8714,
+        0.9826
+      ],
+      "recall_1pct_fpr_ci95": [
+        0.7667,
+        0.9667
+      ],
+      "recall_5pct_fpr_ci95": [
+        0.8333,
+        0.9833
+      ],
+      "recall_10pct_fpr_ci95": [
+        0.8333,
+        0.9833
+      ],
+      "trust_warning": null,
+      "is_trusted": true,
+      "recalls_at_fpr": {
+        "recall_at_1pct_fpr": 0.85,
+        "recall_at_5pct_fpr": 0.9167,
+        "recall_at_10pct_fpr": 0.9167
+      },
+      "calibrated_threshold": 0.6272
+    }
+  },
+  "method_payload_breakdown": {
+    "image": {
+      "dct_ac": {
+        "0.10": {
+          "roc_auc": 1.0,
+          "accuracy": 0.9687,
+          "stego_samples": 19,
+          "clean_samples": 300,
+          "total_samples": 319,
+          "display": "1.000 (N=19)"
+        },
+        "0.20": {
+          "roc_auc": 1.0,
+          "accuracy": 0.9687,
+          "stego_samples": 19,
+          "clean_samples": 300,
+          "total_samples": 319,
+          "display": "1.000 (N=19)"
+        },
+        "0.30": {
+          "roc_auc": 1.0,
+          "accuracy": 0.9694,
+          "stego_samples": 27,
+          "clean_samples": 300,
+          "total_samples": 327,
+          "display": "1.000 (N=27)"
+        },
+        "0.50": {
+          "roc_auc": 1.0,
+          "accuracy": 0.9691,
+          "stego_samples": 24,
+          "clean_samples": 300,
+          "total_samples": 324,
+          "display": "1.000 (N=24)"
+        }
+      },
+      "edge_adaptive": {
+        "0.10": {
+          "roc_auc": 0.5003,
+          "accuracy": 0.8951,
+          "stego_samples": 24,
+          "clean_samples": 300,
+          "total_samples": 324,
+          "display": "0.500 (N=24)"
+        },
+        "0.20": {
+          "roc_auc": 0.7544,
+          "accuracy": 0.9393,
+          "stego_samples": 13,
+          "clean_samples": 300,
+          "total_samples": 313,
+          "display": "0.754 (N=13)"
+        },
+        "0.30": {
+          "roc_auc": 0.916,
+          "accuracy": 0.9437,
+          "stego_samples": 20,
+          "clean_samples": 300,
+          "total_samples": 320,
+          "display": "0.916 (N=20)"
+        },
+        "0.50": {
+          "roc_auc": 0.9938,
+          "accuracy": 0.9658,
+          "stego_samples": 22,
+          "clean_samples": 300,
+          "total_samples": 322,
+          "display": "0.994 (N=22)"
+        }
+      },
+      "lsb_matching": {
+        "0.10": {
+          "roc_auc": 0.8655,
+          "accuracy": 0.9399,
+          "stego_samples": 16,
+          "clean_samples": 300,
+          "total_samples": 316,
+          "display": "0.866 (N=16)"
+        },
+        "0.20": {
+          "roc_auc": 0.9892,
+          "accuracy": 0.962,
+          "stego_samples": 16,
+          "clean_samples": 300,
+          "total_samples": 316,
+          "display": "0.989 (N=16)"
+        },
+        "0.30": {
+          "roc_auc": 0.9872,
+          "accuracy": 0.9649,
+          "stego_samples": 13,
+          "clean_samples": 300,
+          "total_samples": 313,
+          "display": "0.987 (N=13)"
+        },
+        "0.50": {
+          "roc_auc": 0.9993,
+          "accuracy": 0.9686,
+          "stego_samples": 18,
+          "clean_samples": 300,
+          "total_samples": 318,
+          "display": "0.999 (N=18)"
+        }
+      },
+      "lsb_replacement": {
+        "0.10": {
+          "roc_auc": 0.9525,
+          "accuracy": 0.9474,
+          "stego_samples": 23,
+          "clean_samples": 300,
+          "total_samples": 323,
+          "display": "0.952 (N=23)"
+        },
+        "0.20": {
+          "roc_auc": 0.9973,
+          "accuracy": 0.9653,
+          "stego_samples": 17,
+          "clean_samples": 300,
+          "total_samples": 317,
+          "display": "0.997 (N=17)"
+        },
+        "0.30": {
+          "roc_auc": 0.9944,
+          "accuracy": 0.9649,
+          "stego_samples": 13,
+          "clean_samples": 300,
+          "total_samples": 313,
+          "display": "0.994 (N=13)"
+        },
+        "0.50": {
+          "roc_auc": 1.0,
+          "accuracy": 0.9684,
+          "stego_samples": 16,
+          "clean_samples": 300,
+          "total_samples": 316,
+          "display": "1.000 (N=16)"
+        }
+      }
+    },
+    "audio": {
+      "echo_hiding": {
+        "0.20": {
+          "roc_auc": 0.7463,
+          "accuracy": 0.8701,
+          "stego_samples": 11,
+          "clean_samples": 143,
+          "total_samples": 154,
+          "display": "0.746 (N=11)"
+        },
+        "0.40": {
+          "roc_auc": 0.7445,
+          "accuracy": 0.8544,
+          "stego_samples": 15,
+          "clean_samples": 143,
+          "total_samples": 158,
+          "display": "0.745 (N=15)"
+        },
+        "0.70": {
+          "roc_auc": 0.7308,
+          "accuracy": 0.8758,
+          "stego_samples": 10,
+          "clean_samples": 143,
+          "total_samples": 153,
+          "display": "0.731 (N=10)"
+        },
+        "1.00": {
+          "roc_auc": 0.6466,
+          "accuracy": 0.8654,
+          "stego_samples": 13,
+          "clean_samples": 143,
+          "total_samples": 156,
+          "display": "0.647 (N=13)"
+        }
+      },
+      "lsb_matching": {
+        "0.20": {
+          "roc_auc": 0.5329,
+          "accuracy": 0.8272,
+          "stego_samples": 19,
+          "clean_samples": 143,
+          "total_samples": 162,
+          "display": "0.533 (N=19)"
+        },
+        "0.40": {
+          "roc_auc": 0.6089,
+          "accuracy": 0.8654,
+          "stego_samples": 13,
+          "clean_samples": 143,
+          "total_samples": 156,
+          "display": "0.609 (N=13)"
+        },
+        "0.70": {
+          "roc_auc": 0.5336,
+          "accuracy": 0.8397,
+          "stego_samples": 13,
+          "clean_samples": 143,
+          "total_samples": 156,
+          "display": "0.534 (N=13)"
+        },
+        "1.00": {
+          "roc_auc": 0.6107,
+          "accuracy": 0.8859,
+          "stego_samples": 6,
+          "clean_samples": 143,
+          "total_samples": 149,
+          "display": "0.611 (N=6)"
+        }
+      },
+      "lsb_replacement": {
+        "0.20": {
+          "roc_auc": 0.5346,
+          "accuracy": 0.8816,
+          "stego_samples": 9,
+          "clean_samples": 143,
+          "total_samples": 152,
+          "display": "0.535 (N=9)"
+        },
+        "0.40": {
+          "roc_auc": 0.515,
+          "accuracy": 0.8408,
+          "stego_samples": 14,
+          "clean_samples": 143,
+          "total_samples": 157,
+          "display": "0.515 (N=14)"
+        },
+        "0.70": {
+          "roc_auc": 0.6311,
+          "accuracy": 0.8675,
+          "stego_samples": 8,
+          "clean_samples": 143,
+          "total_samples": 151,
+          "display": "0.631 (N=8)"
+        },
+        "1.00": {
+          "roc_auc": 0.6603,
+          "accuracy": 0.871,
+          "stego_samples": 12,
+          "clean_samples": 143,
+          "total_samples": 155,
+          "display": "0.660 (N=12)"
+        }
+      }
+    },
+    "video": {
+      "frame_lsb": {
+        "0.10": {
+          "roc_auc": 0.8361,
+          "accuracy": 0.803,
+          "stego_samples": 6,
+          "clean_samples": 60,
+          "total_samples": 66,
+          "display": "0.836 (N=6)"
+        },
+        "0.20": {
+          "roc_auc": 0.9033,
+          "accuracy": 0.8143,
+          "stego_samples": 10,
+          "clean_samples": 60,
+          "total_samples": 70,
+          "display": "0.903 (N=10)"
+        },
+        "0.40": {
+          "roc_auc": 1.0,
+          "accuracy": 0.8209,
+          "stego_samples": 7,
+          "clean_samples": 60,
+          "total_samples": 67,
+          "display": "1.000 (N=7)"
+        }
+      },
+      "frame_lsb_matching": {
+        "0.10": {
+          "roc_auc": 0.9808,
+          "accuracy": 0.8219,
+          "stego_samples": 13,
+          "clean_samples": 60,
+          "total_samples": 73,
+          "display": "0.981 (N=13)"
+        },
+        "0.20": {
+          "roc_auc": 0.9256,
+          "accuracy": 0.8219,
+          "stego_samples": 13,
+          "clean_samples": 60,
+          "total_samples": 73,
+          "display": "0.926 (N=13)"
+        },
+        "0.40": {
+          "roc_auc": 0.9121,
+          "accuracy": 0.8169,
+          "stego_samples": 11,
+          "clean_samples": 60,
+          "total_samples": 71,
+          "display": "0.912 (N=11)"
+        }
+      }
+    }
+  },
+  "leave_one_method_out": {
+    "image": {
+      "dct_ac": {
+        "method_auc": 1.0,
+        "accuracy": 0.9743,
+        "sample_count": 89,
+        "generalization_gap": -0.0691,
+        "note": "Advantage of 0.0691 AUC vs format average (0.9309)"
+      },
+      "edge_adaptive": {
+        "method_auc": 0.7848,
+        "accuracy": 0.8628,
+        "sample_count": 79,
+        "generalization_gap": 0.1461,
+        "note": "Deficit of 0.1461 AUC vs format average (0.9309)"
+      },
+      "lsb_matching": {
+        "method_auc": 0.9602,
+        "accuracy": 0.9394,
+        "sample_count": 63,
+        "generalization_gap": -0.0293,
+        "note": "Advantage of 0.0293 AUC vs format average (0.9309)"
+      },
+      "lsb_replacement": {
+        "method_auc": 0.9824,
+        "accuracy": 0.9485,
+        "sample_count": 69,
+        "generalization_gap": -0.0515,
+        "note": "Advantage of 0.0515 AUC vs format average (0.9309)"
+      }
+    },
+    "audio": {
+      "echo_hiding": {
+        "method_auc": 0.7161,
+        "accuracy": 0.7552,
+        "sample_count": 49,
+        "generalization_gap": -0.0956,
+        "note": "Advantage of 0.0956 AUC vs format average (0.6205)"
+      },
+      "lsb_matching": {
+        "method_auc": 0.5616,
+        "accuracy": 0.7165,
+        "sample_count": 51,
+        "generalization_gap": 0.0589,
+        "note": "Deficit of 0.0589 AUC vs format average (0.6205)"
+      },
+      "lsb_replacement": {
+        "method_auc": 0.5812,
+        "accuracy": 0.7473,
+        "sample_count": 43,
+        "generalization_gap": 0.0393,
+        "note": "Deficit of 0.0393 AUC vs format average (0.6205)"
+      }
+    },
+    "video": {
+      "frame_lsb": {
+        "method_auc": 0.9152,
+        "accuracy": 0.8313,
+        "sample_count": 23,
+        "generalization_gap": 0.0159,
+        "note": "Deficit of 0.0159 AUC vs format average (0.9311)"
+      },
+      "frame_lsb_matching": {
+        "method_auc": 0.941,
+        "accuracy": 0.8454,
+        "sample_count": 37,
+        "generalization_gap": -0.0099,
+        "note": "Advantage of 0.0099 AUC vs format average (0.9311)"
+      }
+    }
+  }
+}

@@ -385,8 +385,8 @@ def train_deep_pipeline(
 
         logger.info(
             f"Epoch {epoch:02d}/{epochs:02d} [{epoch_duration:.1f}s] - "
-            f"Loss: {avg_loss:.4f} | Val AUC: {val_auc:.4f} | Val Acc: {val_acc*100:.1f}% | "
-            f"{fmt_aucs}"
+            f"Loss: {avg_loss:.4f} | Overall Val AUC: {val_auc:.4f} | Val Acc: {val_acc*100:.1f}% | "
+            f"Validation AUCs: Image={fmt_aucs.get('image_auc', 0.5):.4f}, Audio={fmt_aucs.get('audio_auc', 0.5):.4f}, Video={fmt_aucs.get('video_auc', 0.5):.4f}"
         )
 
         row_log = {
