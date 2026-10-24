@@ -45,6 +45,7 @@ from app.ui.db import (
     format_blind_mode
 )
 from app.ui.components import (
+    dedent_html,
     glass_card,
     stat_card,
     verdict_badge,
@@ -55,6 +56,7 @@ from app.ui.components import (
     render_format_card,
     build_metrics_table_html,
     build_comparison_table_html,
+    build_history_table_html,
     load_real_metrics,
     load_display_metrics,
     load_comparison_results,
@@ -62,6 +64,11 @@ from app.ui.components import (
     get_active_checkpoint_rows,
     empty_state
 )
+
+
+def st_html(html_str: str):
+    """Render HTML safely via st.markdown with zero leading line indentation to avoid code block parsing."""
+    st.markdown(dedent_html(html_str), unsafe_allow_html=True)
 from vaultbreaker.stego_tools.hide import hide_message, get_container_capacity
 from vaultbreaker.stego_tools.reveal import reveal_message
 from vaultbreaker.stego_tools.codec import format_size, CapacityError
@@ -137,7 +144,7 @@ if "selected_sample_path" not in st.session_state:
 
 # --- SIDEBAR NAVIGATION (Flat List, Icon + Label, Orange Marker) ---
 with st.sidebar:
-    st.markdown('''
+    st_html('''
     <div class="sidebar-brand">
         <div class="brand-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -147,7 +154,7 @@ with st.sidebar:
             <div class="brand-sub">Steganography Detection</div>
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     # Render flat list navigation from PAGES list
     for p in PAGES:
@@ -163,7 +170,7 @@ with st.sidebar:
             st.session_state["nav_page"] = p["id"]
             st.rerun()
 
-    st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+    st_html("<div style='height: 24px;'></div>")
 
     # Active checkpoints per format and calibration parameters
     calibrator = predictor.calibrator
@@ -191,7 +198,7 @@ with st.sidebar:
         f'<div style="font-size: 11px; color: var(--text-secondary);" title="Clean false alarm rate target enforced during calibration">Clean false alarm rate: <strong style="color:var(--text-primary); font-family:\'JetBrains Mono\';">{far_str}</strong></div>\n'
         '</div>'
     )
-    st.markdown(ckpt_card_html, unsafe_allow_html=True)
+    st_html(ckpt_card_html)
 
     with st.expander("Advanced Calibration Parameters", expanded=False):
         cal_param_rows = []
@@ -221,7 +228,7 @@ with st.sidebar:
             '</div>\n'
             '</div>'
         )
-        st.markdown(expander_html, unsafe_allow_html=True)
+        st_html(expander_html)
 
 
 # --- THUMBNAIL CACHING HELPER ---
@@ -245,14 +252,14 @@ def get_cached_thumbnail(img_path: Path) -> Optional[str]:
 # PAGE 1: SCAN (Home)
 # =====================================================================
 def render_scan_page():
-    st.markdown('''
+    st_html('''
     <div style="margin-bottom: 1.5rem;">
         <h1 style="margin:0;">VaultBreaker</h1>
         <div style="color: var(--text-secondary); font-size: 14px; margin-top: 2px;">
             Detect hidden data in images, audio and video
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     calibrator = predictor.calibrator
     threshold = calibrator.decision_threshold
@@ -269,12 +276,12 @@ def render_scan_page():
     col_upload, col_sample = st.columns([1.8, 1.0])
 
     with col_upload:
-        st.markdown('<div class="glass-card" style="height: 100%;">', unsafe_allow_html=True)
-        st.markdown('''
+        st_html('<div class="glass-card" style="height: 100%;">')
+        st_html('''
         <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.08em; margin-bottom: 8px;">
             Inspect Container File
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
         
         uploaded_file = st.file_uploader(
             "Drop image, audio or video container to analyze",
@@ -284,10 +291,10 @@ def render_scan_page():
         )
         
         btn_scan = st.button("Scan Container File", type="primary", use_container_width=True, key="btn_run_main_scan")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st_html('</div>')
 
     with col_sample:
-        st.markdown('''
+        st_html('''
         <div class="glass-card" style="height: 100%; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
                 <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.08em; margin-bottom: 8px;">
@@ -297,11 +304,11 @@ def render_scan_page():
                     Explore real evaluation samples across Image, Audio, and Video. Test the detector in Blind Mode or inspect ground truth.
                 </div>
             </div>
-        ''', unsafe_allow_html=True)
+        ''')
         if st.button("Browse Data Explorer", type="secondary", use_container_width=True, key="btn_open_explorer"):
             st.session_state["nav_page"] = "data_explorer"
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st_html('</div>')
 
     # Execute Scan if button clicked or sample handed off
     if (uploaded_file is not None and btn_scan) or sample_to_scan is not None:
@@ -333,8 +340,8 @@ def render_scan_page():
     active_record = get_scan_by_id(active_id) if active_id else None
 
     if active_record:
-        st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st_html("<div style='height: 16px;'></div>")
+        st_html('<div class="glass-card">')
         
         rep = active_record.get("report") or {}
         prob_val = active_record.get("probability")
@@ -355,26 +362,31 @@ def render_scan_page():
         model_reason = rep.get("model_selection_reason") or ""
 
         with col_res_top1:
-            st.markdown(f'''
-            <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
-                {verdict_badge(is_stego, verdict_str, is_unsupported=is_unsupported)}
-                <span style="font-size:16px; font-weight:600; color:var(--text-primary);">{html.escape(fname)}</span>
-            </div>
-            <div style="font-size:12px; color:var(--text-secondary);">
-                Media Type: <strong style="color:var(--text-primary); text-transform:uppercase;">{mtype}</strong> ({fmt.upper()}) · Container Size: <strong style="color:var(--text-primary);">{sz_kb:.1f} KB</strong>
-            </div>
-            <div style="margin-top: 6px; font-size:12px; color:var(--text-secondary);">
-                Model Selected: <strong style="color:#EDEDED;">{html.escape(model_name_disp)}</strong>
-                {f'<span style="margin-left: 8px; color:#E0B341; font-size:11px;">({html.escape(model_reason)})</span>' if model_reason else ''}
-            </div>
-            ''', unsafe_allow_html=True)
+            badge_html = verdict_badge(is_stego, verdict_str, is_unsupported=is_unsupported)
+            reason_span = f'<span style="margin-left: 8px; color:#E0B341; font-size:11px;">({html.escape(model_reason)})</span>' if model_reason else ''
+            top1_html = (
+                f'<div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">'
+                f'{badge_html}'
+                f'<span style="font-size:16px; font-weight:600; color:var(--text-primary);">{html.escape(fname)}</span>'
+                f'</div>'
+                f'<div style="font-size:12px; color:var(--text-secondary);">'
+                f'Media Type: <strong style="color:var(--text-primary); text-transform:uppercase;">{mtype}</strong> ({fmt.upper()}) · Container Size: <strong style="color:var(--text-primary);">{sz_kb:.1f} KB</strong>'
+                f'</div>'
+                f'<div style="margin-top: 6px; font-size:12px; color:var(--text-secondary);">'
+                f'Model Selected: <strong style="color:#EDEDED;">{html.escape(model_name_disp)}</strong>'
+                f'{reason_span}'
+                f'</div>'
+            )
+            st_html(top1_html)
+
         with col_res_top2:
-            st.markdown(f'''
-            <div style="text-align:right;">
-                <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.06em;">Scan Identifier</div>
-                <div style="font-size:14px; font-weight:600; font-family:'JetBrains Mono'; color:var(--text-primary);">{active_record.get("scan_id")}</div>
-            </div>
-            ''', unsafe_allow_html=True)
+            top2_html = (
+                f'<div style="text-align:right;">'
+                f'<div style="font-size:11px; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.06em;">Scan Identifier</div>'
+                f'<div style="font-size:14px; font-weight:600; font-family:\'JetBrains Mono\'; color:var(--text-primary);">{active_record.get("scan_id")}</div>'
+                f'</div>'
+            )
+            st_html(top2_html)
 
         # Notice for lossy compressed inputs
         notice_text = rep.get("notice")
@@ -384,13 +396,14 @@ def render_scan_page():
         # Rule-based structure check findings list
         struct_findings = rep.get("structure_findings") or []
         if struct_findings:
-            st.markdown('''
-            <div style="background: rgba(229, 82, 43, 0.08); border: 1px solid rgba(229, 82, 43, 0.3); border-radius: 8px; padding: 12px; margin: 12px 0;">
-                <div style="font-size: 13px; font-weight: 600; color: #E5522B; margin-bottom: 6px;">Rule-Based Structure Check Findings</div>
-            ''', unsafe_allow_html=True)
-            for msg in struct_findings:
-                st.markdown(f"• **{html.escape(msg)}**")
-            st.markdown('</div>', unsafe_allow_html=True)
+            findings_items = "".join([f'<div style="margin:2px 0;">• <strong>{html.escape(msg)}</strong></div>' for msg in struct_findings])
+            findings_html = (
+                f'<div style="background: rgba(229, 82, 43, 0.08); border: 1px solid rgba(229, 82, 43, 0.3); border-radius: 8px; padding: 12px; margin: 12px 0;">'
+                f'<div style="font-size: 13px; font-weight: 600; color: #E5522B; margin-bottom: 6px;">Rule-Based Structure Check Findings</div>'
+                f'{findings_items}'
+                f'</div>'
+            )
+            st_html(findings_html)
 
         # "Try to reveal message" button when suspected or structure findings present
         if is_stego or struct_findings or ("stego" in verdict_str.lower()):
@@ -403,13 +416,13 @@ def render_scan_page():
 
         # Gauge Bar
         if prob_val is not None:
-            st.markdown(prob_gauge(prob, threshold=threshold), unsafe_allow_html=True)
+            st_html(prob_gauge(prob, threshold=threshold))
         else:
-            st.markdown('''
+            st_html('''
             <div style="margin: 8px 0 14px 0; font-size: 12px; color: var(--text-muted);">
                 Statistical probability gauge omitted (structure check only for lossy/compressed formats).
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
 
         # Ground Truth Strip if available
         gt_lbl = active_record.get("ground_truth_label")
@@ -417,12 +430,12 @@ def render_scan_page():
             gt_method = active_record.get("ground_truth_method") or "clean"
             gt_payload_raw = active_record.get("ground_truth_payload")
             gt_payload = float(gt_payload_raw) if gt_payload_raw is not None else 0.0
-            st.markdown(ground_truth_strip(
+            st_html(ground_truth_strip(
                 real_label=int(gt_lbl),
                 method=gt_method,
                 payload_rate=gt_payload,
                 pred_stego=is_stego
-            ), unsafe_allow_html=True)
+            ))
 
         # Three Tabs: "Why", "Most unusual measurements", "Raw JSON"
         tab_why, tab_unusual, tab_json = st.tabs(["Why", "Most unusual measurements", "Raw JSON"])
@@ -501,14 +514,14 @@ def render_scan_page():
                     st.info("Inter-frame timeline available during live video scan.")
 
         with tab_unusual:
-            st.markdown('''
+            st_html('''
             <div style="font-size:13px; color:var(--text-secondary); margin-bottom: 8px;">
                 These are the forensic measurements furthest from normal (clean baseline population).
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
             top_feats = rep.get("top_features") or []
             if top_feats:
-                st.markdown(render_entities_table(top_feats), unsafe_allow_html=True)
+                st_html(render_entities_table(top_feats))
             else:
                 st.info("Top feature deviations not available for this record.")
 
@@ -531,7 +544,7 @@ def render_scan_page():
                 st.session_state["active_scan_id"] = None
                 st.rerun()
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        st_html('</div>')
 
     # Batch Scan Expander
     with st.expander("Scan multiple files", expanded=False):
@@ -571,76 +584,76 @@ def render_scan_page():
             st.dataframe(pd.DataFrame(batch_results), use_container_width=True)
 
     # Under it: Three small cards (Image / Audio / Video) with real test accuracy & ROC-AUC from metrics.json
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    st.markdown('''
+    st_html("<div style='height: 20px;'></div>")
+    st_html('''
     <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:10px;">
         Test Set Performance Benchmarks (Audited from docs/RESULTS/metrics.json)
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     m_data = load_display_metrics()
     is_smoke = bool(m_data and (m_data.get("is_smoke") or str(m_data.get("profile", "")).lower() == "smoke" or not m_data.get("profile")))
     if is_smoke:
-        st.markdown('''
+        st_html('''
         <div class="badge-smoke-banner">
             ⚠️ Smoke test, not real performance
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
     per_fmt = m_data.get("per_format") if m_data else None
 
     col_b1, col_b2, col_b3 = st.columns(3)
     with col_b1:
         img_metrics = per_fmt.get("image") if per_fmt else None
-        st.markdown(render_format_card(
+        st_html(render_format_card(
             title="Image Steganalysis",
             badge="IMAGE",
             m_dict=img_metrics,
             help_auc="Diagnostic discrimination on image spatial and frequency domain (1.0 = perfect)",
             help_acc="Percentage of correct clean vs stego verdicts on test image partition",
             is_smoke=is_smoke
-        ), unsafe_allow_html=True)
+        ))
 
     with col_b2:
         aud_metrics = per_fmt.get("audio") if per_fmt else None
-        st.markdown(render_format_card(
+        st_html(render_format_card(
             title="Audio Steganalysis",
             badge="AUDIO",
             m_dict=aud_metrics,
             help_auc="Discrimination ability on acoustic LSB and echo hiding",
             help_acc="Percentage of correct clean vs stego verdicts on test audio waveforms",
             is_smoke=is_smoke
-        ), unsafe_allow_html=True)
+        ))
 
     with col_b3:
         vid_metrics = per_fmt.get("video") if per_fmt else None
-        st.markdown(render_format_card(
+        st_html(render_format_card(
             title="Video Steganalysis",
             badge="VIDEO",
             m_dict=vid_metrics,
             help_auc="Discrimination ability across temporal video streams",
             help_acc="Percentage of correct clean vs stego verdicts on test video containers",
             is_smoke=is_smoke
-        ), unsafe_allow_html=True)
+        ))
 
 
 # =====================================================================
 # PAGE: HIDE MESSAGE
 # =====================================================================
 def render_hide_page():
-    st.markdown('''
+    st_html('''
     <div style="margin-bottom: 1.25rem;">
         <h1 style="margin:0;">Hide Message</h1>
         <div style="color: var(--text-secondary); font-size: 14px; margin-top: 2px;">
             Embed encrypted or plain steganographic messages into real media containers using VBK1 protocol
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     col_input, col_status = st.columns([1.2, 1.0])
 
     with col_input:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">1. Select Cover File</div>', unsafe_allow_html=True)
+        st_html('<div class="glass-card">')
+        st_html('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">1. Select Cover File</div>')
         uploaded_cover = st.file_uploader(
             "Upload Cover Media (PNG, JPEG, BMP, WAV, MP3, FLAC, M4A, MKV, MP4, AVI, MOV)",
             type=["png", "jpg", "jpeg", "bmp", "wav", "mp3", "flac", "m4a", "mkv", "mp4", "avi", "mov"],
@@ -671,8 +684,8 @@ def render_hide_page():
             tot_bits = cap_info.get("total_bits")
             tot_b_val = int(tot_bits) if tot_bits is not None else 0
 
-            st.markdown('<div style="height: 8px;"></div>', unsafe_allow_html=True)
-            st.markdown('<div style="font-weight:600; color:var(--text-primary); margin-bottom:6px;">2. Secret Message</div>', unsafe_allow_html=True)
+            st_html('<div style="height: 8px;"></div>')
+            st_html('<div style="font-weight:600; color:var(--text-primary); margin-bottom:6px;">2. Secret Message</div>')
             msg_text = st.text_area(
                 "Message text to embed",
                 placeholder="Enter secret message to hide in container...",
@@ -684,20 +697,20 @@ def render_hide_page():
             msg_bytes_len = len(msg_text.encode("utf-8")) if msg_text else 0
             ratio = min(1.0, msg_bytes_len / max(1, max_b)) if max_b > 0 else 0.0
 
-            st.markdown(f'''
+            st_html(f'''
             <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
                 <span>Container Available Payload Capacity:</span>
                 <strong style="color:var(--text-primary); font-family:'JetBrains Mono';">{format_size(max_b)}</strong>
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
             st.progress(ratio)
             st.caption(f"Payload capacity utilized: {msg_bytes_len:,} / {max_b:,} bytes ({ratio * 100:.1f}%)")
 
             if msg_bytes_len > max_b:
                 st.error(f"Message exceeds available container capacity by {msg_bytes_len - max_b:,} bytes. Please shorten message.")
 
-            st.markdown('<div style="height: 8px;"></div>', unsafe_allow_html=True)
-            st.markdown('<div style="font-weight:600; color:var(--text-primary); margin-bottom:6px;">3. Security & Embedding Method</div>', unsafe_allow_html=True)
+            st_html('<div style="height: 8px;"></div>')
+            st_html('<div style="font-weight:600; color:var(--text-primary); margin-bottom:6px;">3. Security & Embedding Method</div>')
             password = st.text_input(
                 "Optional Passphrase (scrypt KDF + AES-256-GCM encryption + bit scattering)",
                 type="password",
@@ -739,18 +752,18 @@ def render_hide_page():
                     except Exception as e:
                         st.error(f"Embedding failed: {e}")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        st_html('</div>')
 
     with col_status:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">Embedding Result & Verification</div>', unsafe_allow_html=True)
+        st_html('<div class="glass-card">')
+        st_html('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">Embedding Result & Verification</div>')
 
         hide_res = st.session_state.get("last_hide_result")
         if hide_res and st.session_state.get("last_hide_out"):
             out_file = Path(st.session_state["last_hide_out"])
             cover_file = Path(st.session_state.get("last_hide_cover", ""))
 
-            st.markdown('''
+            st_html('''
             <div style="background: rgba(63, 182, 122, 0.12); border: 1px solid rgba(63, 182, 122, 0.35); border-radius: 8px; padding: 12px; margin-bottom: 12px; display:flex; align-items:center; gap:10px;">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3FB67A" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 <div>
@@ -758,7 +771,7 @@ def render_hide_page():
                     <div style="font-size:11px; color:var(--text-secondary);">The extraction engine was immediately executed on the generated file. Decryption and CRC-32 integrity verified 100%.</div>
                 </div>
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
 
             if out_file.exists():
                 out_bytes = out_file.read_bytes()
@@ -775,18 +788,18 @@ def render_hide_page():
             pb_val = hide_res.get("payload_bytes")
             tb_val = hide_res.get("total_bits_embedded")
             cb_val = hide_res.get("capacity_bytes")
-            st.markdown(f'''
+            st_html(f'''
             <div style="font-size:12px; color:var(--text-secondary); margin-top:10px; line-height:1.7;">
                 · Output Container: <strong style="color:var(--text-primary);">{out_file.name}</strong><br/>
                 · Payload Embedded: <strong style="color:var(--text-primary);">{pb_val if pb_val is not None else 0:,} bytes</strong> ({tb_val if tb_val is not None else 0:,} bits)<br/>
                 · Container Capacity: <strong style="color:var(--text-primary);">{cb_val if cb_val is not None else 0:,} bytes</strong><br/>
                 · Destruction Safeguard: <span style="color:var(--status-amber);">Lossless format enforced ({out_file.suffix.upper()[1:]})</span>
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
 
             if out_file.suffix.lower() == ".png" and cover_file.exists():
-                st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:6px;'>Visual Forensic Inspection (50x Amplified Difference)</div>", unsafe_allow_html=True)
+                st_html("<div style='height: 12px;'></div>")
+                st_html("<div style='font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:6px;'>Visual Forensic Inspection (50x Amplified Difference)</div>")
                 try:
                     c_img = cv2.imread(str(cover_file))
                     s_img = cv2.imread(str(out_file))
@@ -809,47 +822,47 @@ def render_hide_page():
                 except Exception as ex:
                     st.caption(f"Could not render difference view: {ex}")
         else:
-            st.markdown('''
+            st_html('''
             <div style="font-size:12px; color:var(--text-muted); text-align:center; padding: 40px 0;">
                 Select a cover file and enter a message on the left to embed and verify hidden data.
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        st_html('</div>')
 
 
 # =====================================================================
 # PAGE: REVEAL MESSAGE
 # =====================================================================
 def render_reveal_page():
-    st.markdown('''
+    st_html('''
     <div style="margin-bottom: 1.25rem;">
         <h1 style="margin:0;">Reveal Message</h1>
         <div style="color: var(--text-secondary); font-size: 14px; margin-top: 2px;">
             Multi-stage forensic extractor: VaultBreaker VBK1, EOF overlay, sequential LSB, and steghide
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     col_rev_in, col_rev_out = st.columns([1.1, 1.3])
 
     with col_rev_in:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">1. Target Container File</div>', unsafe_allow_html=True)
+        st_html('<div class="glass-card">')
+        st_html('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">1. Target Container File</div>')
 
         handed_off_path = st.session_state.get("reveal_target_path")
         target_path = None
 
         if handed_off_path and Path(handed_off_path).exists():
             hp = Path(handed_off_path)
-            st.markdown(f'''
+            st_html(f'''
             <div style="background: rgba(229, 82, 43, 0.1); border: 1px solid rgba(229, 82, 43, 0.3); border-radius: 8px; padding: 10px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
                 <div>
                     <div style="font-size:10px; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.06em;">Handed off from Scan</div>
                     <div style="font-size:13px; font-weight:600; color:var(--text-primary); font-family:'JetBrains Mono';">{hp.name}</div>
                 </div>
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
             if st.button("Upload a different file instead", key="btn_clear_handoff"):
                 st.session_state["reveal_target_path"] = None
                 st.rerun()
@@ -867,8 +880,8 @@ def render_reveal_page():
                 save_p.write_bytes(uploaded_reveal.getvalue())
                 target_path = save_p
 
-        st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600; color:var(--text-primary); margin-bottom:6px;">2. Optional Passphrase</div>', unsafe_allow_html=True)
+        st_html('<div style="height: 10px;"></div>')
+        st_html('<div style="font-weight:600; color:var(--text-primary); margin-bottom:6px;">2. Optional Passphrase</div>')
         reveal_password = st.text_input(
             "Passphrase (required if payload is encrypted with scrypt / AES-GCM)",
             type="password",
@@ -876,7 +889,7 @@ def render_reveal_page():
             key="reveal_password_input"
         )
 
-        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        st_html("<div style='height: 10px;'></div>")
         if st.button("🔓 Extract Hidden Message", type="primary", use_container_width=True, disabled=(target_path is None), key="btn_do_reveal"):
             with st.spinner("Executing 4-stage extraction cascade (VBK1 -> EOF Overlay -> Sequential LSB -> Steghide)..."):
                 try:
@@ -886,16 +899,16 @@ def render_reveal_page():
                 except Exception as e:
                     st.error(f"Extraction error: {e}")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        st_html('</div>')
 
     with col_rev_out:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">Extraction Forensic Report</div>', unsafe_allow_html=True)
+        st_html('<div class="glass-card">')
+        st_html('<div style="font-weight:600; color:var(--text-primary); margin-bottom:8px;">Extraction Forensic Report</div>')
 
         res = st.session_state.get("last_reveal_result")
         if res:
             if res.success:
-                st.markdown(f'''
+                st_html(f'''
                 <div style="background: rgba(63, 182, 122, 0.12); border: 1px solid rgba(63, 182, 122, 0.35); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
                     <div style="font-weight:600; color:#3FB67A; font-size:14px; margin-bottom:4px;">Message Successfully Extracted</div>
                     <div style="font-size:12px; color:var(--text-secondary);">
@@ -904,10 +917,10 @@ def render_reveal_page():
                         · Payload Size: <strong style="color:var(--text-primary); font-family:'JetBrains Mono';">{len(res.data):,} bytes</strong>
                     </div>
                 </div>
-                ''', unsafe_allow_html=True)
+                ''')
 
                 if res.text is not None and not res.is_binary:
-                    st.markdown("<div style='font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:4px;'>Extracted Text Content:</div>", unsafe_allow_html=True)
+                    st_html("<div style='font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:4px;'>Extracted Text Content:</div>")
                     st.text_area(
                         "Extracted text",
                         value=res.text,
@@ -926,7 +939,7 @@ def render_reveal_page():
                     mime = res.mime_type or "application/octet-stream"
                     st.info(f"Binary payload detected ({mime}, {len(res.data):,} bytes)")
                     if res.hex_preview:
-                        st.markdown("<div style='font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:4px;'>Hex Preview (xxd format):</div>", unsafe_allow_html=True)
+                        st_html("<div style='font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:4px;'>Hex Preview (xxd format):</div>")
                         st.code(res.hex_preview, language="text")
                     st.download_button(
                         label=f"⬇️ Download Binary Payload ({format_size(len(res.data))})",
@@ -936,34 +949,34 @@ def render_reveal_page():
                         key="btn_dl_revealed_bin"
                     )
             else:
-                st.markdown(f'''
+                st_html(f'''
                 <div style="background: rgba(229, 82, 43, 0.1); border: 1px solid rgba(229, 82, 43, 0.35); border-radius: 8px; padding: 14px; margin-bottom: 12px;">
                     <div style="font-weight:600; color:#E5522B; font-size:14px; margin-bottom:6px;">Extraction Failed or No Hidden Message Found</div>
                     <div style="font-size:12px; color:var(--text-primary); white-space:pre-wrap; font-family:'JetBrains Mono';">{html.escape(res.error or "Unknown error")}</div>
                 </div>
-                ''', unsafe_allow_html=True)
+                ''')
         else:
-            st.markdown('''
+            st_html('''
             <div style="font-size:12px; color:var(--text-muted); text-align:center; padding: 40px 0;">
                 Select or hand off a target file on the left and click Extract to inspect for hidden data.
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        st_html('</div>')
 
 
 # =====================================================================
 # PAGE: DATA EXPLORER
 # =====================================================================
 def render_data_explorer_page():
-    st.markdown('''
+    st_html('''
     <div style="margin-bottom: 1.25rem;">
         <h1 style="margin:0;">Data Explorer</h1>
         <div style="color: var(--text-secondary); font-size: 14px; margin-top: 2px;">
             Inspect evaluation dataset manifests, test blind samples, and verify ground truth
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     # 1. Summary Cards from Manifests
     summary = load_manifest_summary()
@@ -976,12 +989,12 @@ def render_data_explorer_page():
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(stat_card(
+        st_html(stat_card(
             title="Total Manifest Files",
             value=f"{tot_files:,}",
             subtext=f"{uniq_sources:,} independent source media",
             help_text="Total files registered across training, validation, and test manifest partitions"
-        ), unsafe_allow_html=True)
+        ))
     with c2:
         img_n = media_c.get("image") or 0
         aud_n = media_c.get("audio") or 0
@@ -992,14 +1005,14 @@ def render_data_explorer_page():
             ("Video", f"{vid_n:,}"),
         ]
         sub_c2 = f"Images {img_n:,} / Audio {aud_n:,} / Video {vid_n:,}"
-        st.markdown(stat_card(
+        st_html(stat_card(
             title="Format Breakdown",
             value=sub_c2,
             subtext=sub_c2,
             items=items_c2,
             help_text="Standardized media files across image (256x256), audio (16kHz), and video (128x128)",
             icon_name="grid"
-        ), unsafe_allow_html=True)
+        ))
     with c3:
         tr_n = split_c.get("train") or 0
         val_n = split_c.get("val") or 0
@@ -1010,26 +1023,26 @@ def render_data_explorer_page():
             ("Test", f"{te_n:,}"),
         ]
         sub_c3 = f"Train {tr_n:,} / Val {val_n:,} / Test {te_n:,}"
-        st.markdown(stat_card(
+        st_html(stat_card(
             title="Partition Splits",
             value=sub_c3,
             subtext=sub_c3,
             items=items_c3,
             help_text="Independent split distribution ensuring zero source contamination between train and test",
             icon_name="layers"
-        ), unsafe_allow_html=True)
+        ))
     with c4:
         bal_str = f"Clean {clean_n:,} · Stego {stego_n:,}"
-        st.markdown(stat_card(
+        st_html(stat_card(
             title="Dataset Balance",
             value="50.0% / 50.0%",
             subtext=bal_str,
             help_text="Exact equal proportion of clean baseline media and steganographic samples",
             icon_name="shield"
-        ), unsafe_allow_html=True)
+        ))
 
     # "About this data" Card
-    st.markdown('''
+    st_html('''
     <div class="glass-card" style="margin-top: 14px; padding: 14px 18px;">
         <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:4px;">
             About This Data
@@ -1038,18 +1051,18 @@ def render_data_explorer_page():
             Clean files are sourced from real public datasets (COCO/Div2K, Common Voice, Kinetics). Hidden-data files are generated by our own steganography algorithms. Videos are pan/zoom clips synthesized from still photos to evaluate temporal flicker resistance.
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     # 2. Check missing data folder and fallback
     df_explorer, is_demo_fallback = load_explorer_dataset()
 
     if is_demo_fallback:
-        st.markdown('''
+        st_html('''
         <div class="calm-banner">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
             <span>Full dataset not generated here. Showing demo samples. Run <code>make data</code> for the full set.</span>
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
 
     # 3. Blind Test Mode Toggle & Quick Picks (Test split only)
     col_blind, col_chip = st.columns([1.5, 2.5])
@@ -1062,7 +1075,7 @@ def render_data_explorer_page():
         )
         st.session_state["blind_test_mode"] = is_blind
 
-    st.markdown("<div style='font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin: 10px 0 6px 0;'>Quick Picks (Honest Test Split Only)</div>", unsafe_allow_html=True)
+    st_html("<div style='font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin: 10px 0 6px 0;'>Quick Picks (Honest Test Split Only)</div>")
     
     # 6 Quick Pick buttons from TEST split only
     qp1, qp2, qp3, qp4, qp5, qp6 = st.columns(6)
@@ -1101,7 +1114,7 @@ def render_data_explorer_page():
             pick_and_jump("video", 1)
 
     # 4. Filters Bar
-    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+    st_html("<div style='height: 12px;'></div>")
     fcol1, fcol2, fcol3, fcol4, fcol5 = st.columns([1.2, 1.2, 1.2, 1.2, 1.8])
     with fcol1:
         sel_format = st.selectbox("Format", ["All", "image", "audio", "video"], key="f_format")
@@ -1150,7 +1163,7 @@ def render_data_explorer_page():
             st.session_state["explorer_page"] = max(0, curr_page - 1)
             st.rerun()
     with p_col2:
-        st.markdown(f"<div style='text-align:center; font-size:12px; color:var(--text-secondary); padding-top:8px;'>Showing page <strong>{curr_page + 1}</strong> of <strong>{total_pages}</strong> ({total_matching} items)</div>", unsafe_allow_html=True)
+        st_html(f"<div style='text-align:center; font-size:12px; color:var(--text-secondary); padding-top:8px;'>Showing page <strong>{curr_page + 1}</strong> of <strong>{total_pages}</strong> ({total_matching} items)</div>")
     with p_col3:
         if st.button("Next Page ▶", disabled=(curr_page >= total_pages - 1), key="btn_next_page"):
             st.session_state["explorer_page"] = min(total_pages - 1, curr_page + 1)
@@ -1182,7 +1195,7 @@ def render_data_explorer_page():
                     resolved_p = (root_dir / str(raw_path)) if raw_path else None
                     file_exists = (resolved_p is not None and resolved_p.exists())
                     
-                    st.markdown('<div class="explorer-card">', unsafe_allow_html=True)
+                    st_html('<div class="explorer-card">')
                     
                     # Preview box
                     if file_exists and mtype == "image":
@@ -1197,9 +1210,9 @@ def render_data_explorer_page():
                         st.video(str(resolved_p))
                     else:
                         icon_name = "image" if mtype == "image" else "music" if mtype == "audio" else "video"
-                        st.markdown(f'<div class="thumb-box">{get_svg_icon(icon_name, size=32, color="#707070")}</div>', unsafe_allow_html=True)
+                        st_html(f'<div class="thumb-box">{get_svg_icon(icon_name, size=32, color="#707070")}</div>')
 
-                    st.markdown(f'''
+                    st_html(f'''
                     <div style="font-weight:600; font-size:13px; color:var(--text-primary); margin:6px 0 2px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{html.escape(fname)}">
                         {html.escape(fname)}
                     </div>
@@ -1212,7 +1225,7 @@ def render_data_explorer_page():
                     <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">
                         Method: <strong style="color:var(--text-primary);">{b_info["method_str"]}</strong> ({b_info["payload_rate_str"]})
                     </div>
-                    ''', unsafe_allow_html=True)
+                    ''')
 
                     # Actions: Scan this file & Download
                     act_c1, act_c2 = st.columns(2)
@@ -1235,46 +1248,46 @@ def render_data_explorer_page():
                                     key=f"dl_{fname}_{start_idx + row_start + c_idx}",
                                     use_container_width=True
                                 )
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    st_html('</div>')
 
 
 # =====================================================================
 # PAGE 3: RESULTS (from metrics.json only)
 # =====================================================================
 def render_results_page():
-    st.markdown('''
+    st_html('''
     <div style="margin-bottom: 1.5rem;">
         <h1 style="margin:0;">Evaluation Results & Benchmark Metrics</h1>
         <div style="color: var(--text-secondary); font-size: 14px; margin-top: 2px;">
             Strictly derived from real test evaluation metrics in docs/RESULTS/
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     metrics_data = load_display_metrics()
 
     if not metrics_data:
-        st.markdown('''
+        st_html('''
         <div class="empty-state-box">
             <div class="empty-title">No real training run yet</div>
             <div class="empty-subtext">Run training with laptop or GPU profile to generate real benchmark metrics.</div>
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
         return
 
     is_smoke = bool(metrics_data.get("is_smoke") or str(metrics_data.get("profile", "")).lower() == "smoke" or not metrics_data.get("profile"))
 
     if is_smoke:
-        st.markdown('''
+        st_html('''
         <div class="badge-smoke-banner">
             ⚠️ Smoke test, not real performance
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
     else:
         profile_name = str(metrics_data.get("profile", "laptop")).upper()
         device_name = str(metrics_data.get("device", "auto"))
         epochs_val = metrics_data.get("epochs", "N/A")
-        st.markdown(f'''
+        st_html(f'''
         <div style="display:flex; align-items:center; gap:8px; margin-bottom: 16px;">
             <span style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; background:rgba(63, 182, 122, 0.15); border:1px solid #3FB67A; color:#3FB67A;">
                 REAL RUN: {profile_name} PROFILE
@@ -1283,32 +1296,32 @@ def render_results_page():
                 Device: <strong>{device_name}</strong> | Epochs: <strong>{epochs_val}</strong> | Commit: <code>{str(metrics_data.get("git_commit", "unknown"))[:8]}</code>
             </span>
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
 
     # Main Metrics Table (Format | Accuracy | ROC-AUC (95% CI) | Recall @1% FPR | Recall @5% FPR | Recall @10% FPR | Test files)
     table_html = build_metrics_table_html(metrics_data, is_smoke=is_smoke)
-    st.markdown(table_html, unsafe_allow_html=True)
+    st_html(table_html)
 
     # Side-by-Side Model Comparison Table (Format | Deep model | Handcrafted MLP | Gradient boosting)
     comparison_data = load_display_comparison_results()
     if comparison_data:
         comp_is_smoke = bool(comparison_data.get("is_smoke") or str(comparison_data.get("profile", "")).lower() == "smoke" or not comparison_data.get("profile"))
-        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-        st.markdown('''
+        st_html("<div style='height: 20px;'></div>")
+        st_html('''
         <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:8px;">
             Side-by-Side Model Comparison (Same Test Manifest)
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
         comp_table_html = build_comparison_table_html(comparison_data, is_smoke=comp_is_smoke)
-        st.markdown(comp_table_html, unsafe_allow_html=True)
+        st_html(comp_table_html)
 
     # Bar chart of accuracy per hiding method
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    st.markdown('''
+    st_html("<div style='height: 20px;'></div>")
+    st_html('''
     <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:8px;">
         Accuracy by Hiding Method
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     per_method = metrics_data.get("per_method") or {}
     if per_method:
@@ -1359,7 +1372,7 @@ def render_results_page():
     # Artifact Visuals: Method x Payload Heatmap, ROC Curves & Confusion Matrix
     heatmap_img_path = root_dir / "docs" / "RESULTS" / "method_payload_heatmap.png"
     if heatmap_img_path.exists():
-        st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+        st_html("<div style='height: 14px;'></div>")
         st.markdown("**Detection Rate by Hiding Method and Payload Rate**")
         st.image(str(heatmap_img_path), use_column_width=True)
 
@@ -1377,7 +1390,7 @@ def render_results_page():
             st.image(str(cm_img_path), use_column_width=True)
 
     # "Known Limitations" Card
-    st.markdown('''
+    st_html('''
     <div class="glass-card" style="margin-top: 20px;">
         <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-secondary); letter-spacing:0.08em; margin-bottom:8px;">
             Known Limitations
@@ -1390,39 +1403,39 @@ def render_results_page():
             <li><strong>Conservative alert threshold:</strong> Operating at 5% clean false alarm target inevitably misses low-payload injections (&lt; 0.10 bpp).</li>
         </ul>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     # "What do these numbers mean?" Expander
     with st.expander("What do these numbers mean?", expanded=False):
-        st.markdown('''
+        st_html('''
         <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
             <p><strong>Accuracy:</strong> Percentage of all evaluated clean and hidden-data media correctly classified at the alert threshold.</p>
             <p><strong>ROC-AUC (Area Under ROC Curve):</strong> Comprehensive diagnostic discrimination across all possible operating thresholds (1.0 = perfect detection, 0.5 = coin toss).</p>
             <p><strong>Precision:</strong> When VaultBreaker flags a file as containing hidden data, the proportion of times it is truly steganographic.</p>
             <p><strong>Recall:</strong> The fraction of all true hidden-data files in the test partition that VaultBreaker successfully detects.</p>
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
 
 
 # =====================================================================
 # PAGE 4: HISTORY
 # =====================================================================
 def render_history_page():
-    st.markdown('''
+    st_html('''
     <div style="margin-bottom: 1.5rem;">
         <h1 style="margin:0;">Scan History</h1>
         <div style="color: var(--text-secondary); font-size: 14px; margin-top: 2px;">
             Persistent forensic log of media files analyzed by VaultBreaker
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
     scans = get_all_scans(limit=500)
 
     # Top action bar
     col_h_left, col_h_right = st.columns([2.0, 1.5])
     with col_h_left:
-        st.markdown(f"<div style='font-size:13px; color:var(--text-secondary); padding-top:6px;'>Total Recorded Scans: <strong style='color:var(--text-primary); font-family:JetBrains Mono;'>{len(scans)}</strong></div>", unsafe_allow_html=True)
+        st_html(f"<div style='font-size:13px; color:var(--text-secondary); padding-top:6px;'>Total Recorded Scans: <strong style='color:var(--text-primary); font-family:JetBrains Mono;'>{len(scans)}</strong></div>")
 
     with col_h_right:
         act_c1, act_c2 = st.columns(2)
@@ -1459,12 +1472,12 @@ def render_history_page():
 
     # Empty State
     if not scans:
-        st.markdown(empty_state(
+        st_html(empty_state(
             title="Scan History is Empty",
             subtext="A fresh start has zero recorded scans. Inspect a file on the Scan page or browse evaluation samples in the Data Explorer.",
             button_label=None,
             icon_name="clock"
-        ), unsafe_allow_html=True)
+        ))
         col_c, _ = st.columns([1.5, 3.5])
         with col_c:
             if st.button("Try a sample in Data Explorer", type="primary", use_container_width=True, key="btn_try_sample_history"):
@@ -1473,63 +1486,11 @@ def render_history_page():
         return
 
     # Table of past scans
-    rows = []
-    for s in scans:
-        sid = s.get("scan_id") or ""
-        dt = (s.get("created_at") or "")[:19]
-        fn = s.get("filename") or "unknown"
-        mtype = (s.get("media_type") or "image").upper()
-        prob_val = s.get("probability")
-        prob = float(prob_val) if prob_val is not None else 0.0
-        prob_str = f"{prob * 100:.1f}%"
-        verdict = s.get("verdict") or "CLEAN"
-        is_stego = ("STEGO" in verdict or prob >= predictor.calibrator.decision_threshold)
-        v_chip = score_pill_html(prob, threshold=predictor.calibrator.decision_threshold)
-        
-        # Ground truth correctness
-        gt_lbl = s.get("ground_truth_label")
-        is_corr = s.get("is_correct")
-        if gt_lbl is not None:
-            actual_str = "Stego" if gt_lbl == 1 else "Clean"
-            if is_corr == 1:
-                corr_str = '<span style="color:#3FB67A; font-weight:600;">Correct</span>'
-            else:
-                corr_str = '<span style="color:#E0B341; font-weight:600;">Incorrect</span>'
-            gt_display = f"{actual_str} ({corr_str})"
-        else:
-            gt_display = '<span style="color:#707070;">Live Upload</span>'
-
-        rows.append(f'''
-        <tr>
-            <td style="font-family:'JetBrains Mono'; font-weight:600; color:#EDEDED;">{sid}</td>
-            <td style="color:#A0A0A0; font-size:12px;">{dt}</td>
-            <td style="font-weight:600; color:#EDEDED;">{html.escape(fn)}</td>
-            <td><span class="badge-media">{mtype}</span></td>
-            <td>{v_chip}</td>
-            <td>{gt_display}</td>
-        </tr>
-        ''')
-
-    st.markdown(f'''
-    <table class="glass-table">
-        <thead>
-            <tr>
-                <th>Scan ID</th>
-                <th>Timestamp</th>
-                <th>File Name</th>
-                <th>Modality</th>
-                <th>Calibrated Score</th>
-                <th>Ground Truth Verification</th>
-            </tr>
-        </thead>
-        <tbody>
-            {''.join(rows)}
-        </tbody>
-    </table>
-    ''', unsafe_allow_html=True)
+    history_table_html = build_history_table_html(scans, decision_threshold=predictor.calibrator.decision_threshold)
+    st_html(history_table_html)
 
     # Reopen Scan selector
-    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+    st_html("<div style='height: 12px;'></div>")
     scan_map = {f"{s.get('scan_id')} - {s.get('filename')} ({float(s.get('probability') or 0.0)*100:.1f}%)": s.get("scan_id") for s in scans}
     sel_label = st.selectbox("Select Scan to Reopen in Inspector", list(scan_map.keys()), key="sel_reopen_scan")
     if st.button("Inspect Selected Scan", type="secondary", key="btn_reopen_inspect"):

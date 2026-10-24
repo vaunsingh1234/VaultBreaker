@@ -22,23 +22,30 @@ TEXT_SECONDARY = "#A0A0A0"
 TEXT_MUTED = "#707070"
 
 
+def dedent_html(html_str: str) -> str:
+    """Ensure HTML string contains no lines with leading indentation or blank lines that cause CommonMark code block parsing."""
+    if not html_str:
+        return ""
+    lines = [line.strip() for line in html_str.splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
 def glass_card(content_html: str, title: Optional[str] = None, subtitle: Optional[str] = None) -> str:
     """Renders a standard glassmorphic card container."""
     header_html = ""
     if title:
         sub_html = f'<div style="font-size:12px; color:var(--text-muted); margin-top:2px;">{html.escape(subtitle)}</div>' if subtitle else ""
-        header_html = f'''
-        <div style="margin-bottom: 14px; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px;">
-            <div style="font-size:15px; font-weight:600; color:var(--text-primary);">{html.escape(title)}</div>
-            {sub_html}
-        </div>
-        '''
-    return f'''
+        header_html = (
+            '<div style="margin-bottom: 14px; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px;">'
+            f'<div style="font-size:15px; font-weight:600; color:var(--text-primary);">{html.escape(title)}</div>'
+            f'{sub_html}</div>'
+        )
+    return dedent_html(f'''
     <div class="glass-card">
         {header_html}
         {content_html}
     </div>
-    '''
+    ''')
 
 
 def stat_card(
@@ -65,7 +72,7 @@ def stat_card(
 
     subtext_html = f'<div class="stat-subtext">{html.escape(subtext)}</div>' if subtext else ""
     
-    return (
+    return dedent_html(
         f'<div class="stat-card" {title_attr}>\n'
         f'<div class="stat-header">\n'
         f'<span class="stat-title">{html.escape(title)}</span>\n'
@@ -81,27 +88,24 @@ def verdict_badge(is_stego: bool, text: Optional[str] = None, is_unsupported: bo
     """Renders a styled verdict chip (clean, stego, or unsupported)."""
     if is_unsupported or (text and "unsupported" in text.lower()):
         lbl = text or "Unsupported Format"
-        return f'''
-        <div class="verdict-badge" style="background: rgba(140, 140, 140, 0.15); color: #B0B0B0; border: 1px solid rgba(140, 140, 140, 0.3);">
-            <span class="verdict-dot" style="background: #A0A0A0; box-shadow: 0 0 8px rgba(160, 160, 160, 0.4);"></span>
-            <span>{html.escape(lbl)}</span>
-        </div>
-        '''
+        return (
+            '<div class="verdict-badge" style="background: rgba(140, 140, 140, 0.15); color: #B0B0B0; border: 1px solid rgba(140, 140, 140, 0.3);">'
+            '<span class="verdict-dot" style="background: #A0A0A0; box-shadow: 0 0 8px rgba(160, 160, 160, 0.4);"></span>'
+            f'<span>{html.escape(lbl)}</span></div>'
+        )
     if is_stego:
         lbl = text or "Suspected hidden data"
-        return f'''
-        <div class="verdict-badge verdict-stego">
-            <span class="verdict-dot dot-stego"></span>
-            <span>{html.escape(lbl)}</span>
-        </div>
-        '''
+        return (
+            '<div class="verdict-badge verdict-stego">'
+            '<span class="verdict-dot dot-stego"></span>'
+            f'<span>{html.escape(lbl)}</span></div>'
+        )
     lbl = text or "No hidden data detected"
-    return f'''
-    <div class="verdict-badge verdict-clean">
-        <span class="verdict-dot dot-clean"></span>
-        <span>{html.escape(lbl)}</span>
-    </div>
-    '''
+    return (
+        '<div class="verdict-badge verdict-clean">'
+        '<span class="verdict-dot dot-clean"></span>'
+        f'<span>{html.escape(lbl)}</span></div>'
+    )
 
 
 def prob_gauge(prob: float, threshold: float = 0.5) -> str:
@@ -110,7 +114,7 @@ def prob_gauge(prob: float, threshold: float = 0.5) -> str:
     t_pct = max(0.0, min(100.0, threshold * 100.0))
     bar_color = STATUS_STEGO if prob >= threshold else STATUS_CLEAN
     
-    return f'''
+    return dedent_html(f'''
     <div style="margin: 8px 0 14px 0;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
             <span style="font-size:12px; color:var(--text-secondary);">Calibrated Stego Score</span>
@@ -126,7 +130,7 @@ def prob_gauge(prob: float, threshold: float = 0.5) -> str:
             <span>100% (Payload)</span>
         </div>
     </div>
-    '''
+    ''')
 
 
 def ground_truth_strip(
@@ -147,7 +151,7 @@ def ground_truth_strip(
     method_desc = method.replace("_", " ").title() if method != "clean" else "Baseline Clean"
     payload_str = f"{payload_rate:.2f} bpp / rate" if payload_rate > 0 else "None (0.0)"
     
-    return f'''
+    return dedent_html(f'''
     <div class="ground-truth-strip {strip_cls}">
         <div>
             <div class="gt-label">Ground Truth Verification</div>
@@ -166,7 +170,7 @@ def ground_truth_strip(
             <div class="gt-value">{payload_str}</div>
         </div>
     </div>
-    '''
+    ''')
 
 
 def score_pill_html(prob: float, threshold: Optional[float] = None) -> str:
@@ -200,14 +204,14 @@ def empty_state(title: str, subtext: str, button_label: Optional[str] = None, ic
     """Renders a friendly glass empty state container."""
     icon_svg = get_svg_icon(icon_name, size=32, color=TEXT_SECONDARY)
     btn_html = f'<div style="margin-top: 14px;"><span class="badge-media">{html.escape(button_label)}</span></div>' if button_label else ""
-    return f'''
+    return dedent_html(f'''
     <div class="empty-state-box">
         {icon_svg}
         <div class="empty-title">{html.escape(title)}</div>
         <div class="empty-subtext">{html.escape(subtext)}</div>
         {btn_html}
     </div>
-    '''
+    ''')
 
 
 def render_entities_table(top_features: List[Tuple[str, float]]) -> str:
@@ -236,17 +240,17 @@ def render_entities_table(top_features: List[Tuple[str, float]]) -> str:
 
         impact = "Elevating Risk" if dev > 1.5 else "Nominal" if abs(dev) < 1.0 else "Suppressing Risk"
 
-        rows.append(f'''
-        <tr>
-            <td style="font-family:'JetBrains Mono'; color:#8B8B8B;">#{rank:02d}</td>
-            <td style="font-weight:600; color:#EDEDED;">{html.escape(name)}</td>
-            <td><span style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,0.06); color:#A0A0A0;">{domain}</span></td>
-            <td style="font-family:'JetBrains Mono'; color:{dev_color}; font-weight:600;">{dev_val}</td>
-            <td style="color:#B5B5B5; font-size:12px;">{impact}</td>
-        </tr>
-        ''')
+        rows.append(
+            f'<tr>'
+            f'<td style="font-family:\'JetBrains Mono\'; color:#8B8B8B;">#{rank:02d}</td>'
+            f'<td style="font-weight:600; color:#EDEDED;">{html.escape(name)}</td>'
+            f'<td><span style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,0.06); color:#A0A0A0;">{domain}</span></td>'
+            f'<td style="font-family:\'JetBrains Mono\'; color:{dev_color}; font-weight:600;">{dev_val}</td>'
+            f'<td style="color:#B5B5B5; font-size:12px;">{impact}</td>'
+            f'</tr>'
+        )
 
-    return f'''
+    return dedent_html(f'''
     <table class="glass-table">
         <thead>
             <tr>
@@ -261,7 +265,7 @@ def render_entities_table(top_features: List[Tuple[str, float]]) -> str:
             {''.join(rows)}
         </tbody>
     </table>
-    '''
+    ''')
 
 
 def render_format_card(
@@ -302,7 +306,7 @@ def render_format_card(
             f'</div>'
         )
 
-    return (
+    return dedent_html(
         f'<div class="stat-card">\n'
         f'<div class="stat-header"><span class="stat-title">{html.escape(title)}</span>\n'
         f'<span style="font-size:10px; font-weight:600; padding:2px 8px; border-radius:9999px; background:rgba(229,82,43,0.15); color:#E5522B; border:1px solid rgba(229,82,43,0.3);">{html.escape(badge)}</span></div>\n'
@@ -445,6 +449,62 @@ def build_comparison_table_html(comparison_data: Dict[str, Any], is_smoke: bool 
 
     lines.append('</tbody>')
     lines.append('</table>')
+    lines.append('</div>')
+    return "\n".join(lines)
+
+
+def build_history_table_html(scans: List[Dict[str, Any]], decision_threshold: float = 0.5) -> str:
+    """Build dedented HTML table for historical scans.
+    Ensures zero lines start with 4+ spaces so CommonMark never treats rows as code blocks.
+    """
+    lines = [
+        '<div class="glass-table-container">',
+        '<table class="glass-table">',
+        '<thead>',
+        '<tr>',
+        '<th>Scan ID</th>',
+        '<th>Timestamp</th>',
+        '<th>File Name</th>',
+        '<th>Modality</th>',
+        '<th>Calibrated Score</th>',
+        '<th>Ground Truth Verification</th>',
+        '</tr>',
+        '</thead>',
+        '<tbody>',
+    ]
+    for s in scans:
+        sid = s.get("scan_id") or ""
+        dt = (s.get("created_at") or "")[:19]
+        fn = s.get("filename") or "unknown"
+        mtype = (s.get("media_type") or "image").upper()
+        prob_val = s.get("probability")
+        prob = float(prob_val) if prob_val is not None else 0.0
+        v_chip = score_pill_html(prob, threshold=decision_threshold)
+
+        gt_lbl = s.get("ground_truth_label")
+        is_corr = s.get("is_correct")
+        if gt_lbl is not None:
+            actual_str = "Stego" if gt_lbl == 1 else "Clean"
+            if is_corr == 1:
+                corr_str = '<span style="color:#3FB67A; font-weight:600;">Correct</span>'
+            else:
+                corr_str = '<span style="color:#E0B341; font-weight:600;">Incorrect</span>'
+            gt_display = f"{actual_str} ({corr_str})"
+        else:
+            gt_display = '<span style="color:#707070;">Live Upload</span>'
+
+        lines.append('<tr>')
+        lines.append(f'<td style="font-family:\'JetBrains Mono\'; font-weight:600; color:#EDEDED;">{sid}</td>')
+        lines.append(f'<td style="color:#A0A0A0; font-size:12px;">{dt}</td>')
+        lines.append(f'<td style="font-weight:600; color:#EDEDED;">{html.escape(fn)}</td>')
+        lines.append(f'<td><span class="badge-media">{mtype}</span></td>')
+        lines.append(f'<td>{v_chip}</td>')
+        lines.append(f'<td>{gt_display}</td>')
+        lines.append('</tr>')
+
+    lines.append('</tbody>')
+    lines.append('</table>')
+    lines.append('</div>')
     return "\n".join(lines)
 
 

@@ -322,3 +322,116 @@ def test_active_checkpoint_rows_and_dynamic_fpr():
     assert abs(target_fpr - 0.05) < 1e-4
 
 
+def test_history_table_html_dedented_and_no_raw_html_code_blocks():
+    """Verify that build_history_table_html lines are never indented with 4+ spaces and CommonMark renders them as HTML."""
+    from markdown_it import MarkdownIt
+    from app.ui.components import build_history_table_html
+
+    sample_scans = [
+        {"scan_id": "SCN-0003", "created_at": "2026-10-24 12:24:23", "filename": "img_src_0034_clean.png", "media_type": "image", "probability": 0.02, "ground_truth_label": 0, "is_correct": 1},
+        {"scan_id": "SCN-0002", "created_at": "2026-10-24 12:24:02", "filename": "img_src_0004_stego_lsb_replacement_0.20.png", "media_type": "image", "probability": 0.99, "ground_truth_label": 1, "is_correct": 1},
+        {"scan_id": "SCN-0001", "created_at": "2026-10-24 12:17:17", "filename": "stego_Media (1) (1).png", "media_type": "image", "probability": 0.98, "ground_truth_label": None, "is_correct": None},
+    ]
+
+    html_tbl = build_history_table_html(sample_scans, decision_threshold=0.5)
+
+    # 1. No line starts with 4+ spaces or tabs
+    for idx, line in enumerate(html_tbl.splitlines()):
+        assert not line.startswith("    "), f"Line {idx} in history table HTML has 4+ leading spaces: {line!r}"
+        assert not line.startswith("\t"), f"Line {idx} in history table HTML has tab indentation: {line!r}"
+
+    # 2. Contains required table headers
+    assert "<th>Scan ID</th>" in html_tbl
+    assert "<th>Timestamp</th>" in html_tbl
+    assert "<th>File Name</th>" in html_tbl
+    assert "<th>Modality</th>" in html_tbl
+    assert "<th>Calibrated Score</th>" in html_tbl
+    assert "<th>Ground Truth Verification</th>" in html_tbl
+
+    # 3. Streamlit's CommonMark parser does not produce code blocks
+    md = MarkdownIt()
+    rendered = md.render(html_tbl)
+    assert "<pre>" not in rendered, "History table was erroneously converted to <pre> code block!"
+    assert "<code>" not in rendered, "History table was erroneously converted to <code> block!"
+
+
+def test_scan_result_card_html_never_contains_raw_code_blocks():
+    """Verify that scan result header with verdict_badge never converts to CommonMark code block."""
+    from markdown_it import MarkdownIt
+    from app.ui.components import verdict_badge, dedent_html
+
+    fname = "stego_Media (1) (1).png"
+    mtype = "image"
+    fmt = "png"
+    sz_kb = 124.5
+    model_name_disp = "VaultBreakerDeepNet"
+    model_reason = "Best validation ROC-AUC (0.9998) vs handcrafted_mlp: 0.9573, gradient_boosting"
+
+    badge_html = verdict_badge(True, "Suspected hidden data", is_unsupported=False)
+    reason_span = f'<span style="margin-left: 8px; color:#E0B341; font-size:11px;">({model_reason})</span>'
+
+    top1_html = dedent_html(f'''
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+        {badge_html}
+        <span style="font-size:16px; font-weight:600; color:var(--text-primary);">{fname}</span>
+    </div>
+    <div style="font-size:12px; color:var(--text-secondary);">
+        Media Type: <strong style="color:var(--text-primary); text-transform:uppercase;">{mtype}</strong> ({fmt.upper()}) · Container Size: <strong style="color:var(--text-primary);">{sz_kb:.1f} KB</strong>
+    </div>
+    <div style="margin-top: 6px; font-size:12px; color:var(--text-secondary);">
+        Model Selected: <strong style="color:#EDEDED;">{model_name_disp}</strong>
+        {reason_span}
+    </div>
+    ''')
+
+    # Check that no lines start with 4+ spaces
+    for idx, line in enumerate(top1_html.splitlines()):
+        assert not line.startswith("    "), f"Line {idx} in scan top1 HTML has 4+ leading spaces: {line!r}"
+
+    # Render via markdown-it and ensure no pre/code tags
+    md = MarkdownIt()
+    rendered = md.render(top1_html)
+    assert "<pre>" not in rendered, "Scan card was erroneously converted to <pre> code block!"
+    assert "<code>" not in rendered, "Scan card was erroneously converted to <code> block!"
+
+
+def test_all_components_dedented():
+    """Verify all UI component library functions produce dedented HTML strings."""
+    from app.ui.components import (
+        glass_card,
+        stat_card,
+        verdict_badge,
+        prob_gauge,
+        ground_truth_strip,
+        empty_state,
+        render_entities_table,
+        render_format_card,
+    )
+
+    components_outputs = [
+        glass_card("<div>Content</div>", title="Title", subtitle="Sub"),
+        stat_card("Title", "1,000", "subtext"),
+        verdict_badge(True, "Stego"),
+        verdict_badge(False, "Clean"),
+        prob_gauge(0.75, 0.5),
+        ground_truth_strip(1, "lsb_matching", 0.2, True),
+        empty_state("Title", "Subtext"),
+        render_entities_table([("lsb_flip_rate", 2.3), ("srm_kv_kurtosis", -1.2)]),
+        render_format_card("Image", "IMG", {"roc_auc": 0.9, "accuracy": 0.95, "unique_sources": 50}, "auc", "acc"),
+    ]
+
+    for comp_html in components_outputs:
+        for idx, line in enumerate(comp_html.splitlines()):
+            assert not line.startswith("    "), f"Component HTML line {idx} starts with 4+ spaces: {line!r}"
+
+
+def test_streamlit_app_uses_st_html_for_all_html_rendering():
+    """Verify that streamlit_app.py uses st_html for all HTML rendering, avoiding CommonMark indentation bugs."""
+    app_code = (ROOT_DIR / "app" / "streamlit_app.py").read_text()
+
+    # Check that unsafe_allow_html=True only appears in st_html definition and CSS loading
+    matches = [line.strip() for line in app_code.splitlines() if "unsafe_allow_html=True" in line]
+    assert len(matches) <= 2, f"Found unexpected unsafe_allow_html calls outside st_html/CSS: {matches}"
+
+
+
